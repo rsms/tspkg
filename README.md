@@ -56,7 +56,7 @@ Now, say we're working on `fmtmsg` and we realize that by using functionality in
 tspkg will detect these situations and stop you from building Weird Packages™. Trying to build a package with the above configuration would make tspkg stop with an error:
 
 ```txt
-error TSPKG1: Cyclic dependency detected: msg/parse -> msg/classify -> fmtmsg -> msg/parse
+error TSPKG1: Circular dependency: msg/parse -> msg/classify -> fmtmsg -> msg/parse
 ```
 
 We can fix this by moving the helpful function found in `msg/parse` to a separate module/file:

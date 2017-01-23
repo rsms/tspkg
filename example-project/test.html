@@ -1,0 +1,18 @@
+<html>
+<script type="text/javascript">
+
+window['util'] = {
+  inspect: JSON.stringify
+}
+window['assert'] = function(cond) { if (!cond) throw new Error('assertion failure') };
+window['assert'].equal = function(a,b) { window['assert'](a==b) }
+
+</script>
+<script type="text/javascript" src="out/a.js"></script>
+<script type="text/javascript">
+
+console.log(window['example-project'])
+
+</script>
+
+</html>

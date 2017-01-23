@@ -1,0 +1,62 @@
+{
+  "name": "tspkg",
+  "version": "0.0.2",
+  "description": "Create small, fast and easily-distributable packages from TypeScript projects",
+  "bin": {
+    "tspkg": "./tspkg"
+  },
+  "files": [
+    "tspkg",
+    "lib/babel-plugin-dce.js",
+    "lib/babel-plugin-minify.js",
+    "lib/babel-plugin-pkg.js",
+    "lib/babel-plugin-prep.js",
+    "lib/gulp-concat.js",
+    "lib/gulp-pkg.js",
+    "lib/mark-eval-scope.js",
+    "lib/toposort.js",
+    "lib/util.js"
+  ],
+  "keywords": [
+    "compression",
+    "optimization"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rsms/tspkg.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rsms/tspkg/issues"
+  },
+  "homepage": "https://github.com/rsms/tspkg#readme",
+  "author": "Rasmus Andersson <rsms.me>",
+  "license": "MIT",
+  "dependencies": {
+    "babel-plugin-minify-constant-folding": "^0.0.3",
+    "babel-plugin-minify-dead-code-elimination": "^0.1.2",
+    "babel-plugin-minify-flip-comparisons": "^0.0.2",
+    "babel-plugin-minify-guarded-expressions": "^0.0.4",
+    "babel-plugin-minify-infinity": "^0.0.1",
+    "babel-plugin-minify-mangle-names": "^0.0.6",
+    "babel-plugin-minify-numeric-literals": "^0.0.1",
+    "babel-plugin-minify-replace": "^0.0.2",
+    "babel-plugin-minify-simplify": "^0.0.6",
+    "babel-plugin-minify-type-constructors": "^0.0.3",
+    "babel-plugin-transform-es2015-modules-commonjs": "^6.22.0",
+    "babel-plugin-transform-member-expression-literals": "^6.8.1",
+    "babel-plugin-transform-merge-sibling-variables": "^6.8.1",
+    "babel-plugin-transform-minify-booleans": "^6.8.0",
+    "babel-plugin-transform-property-literals": "^6.8.1",
+    "babel-plugin-transform-regexp-constructors": "^0.0.5",
+    "babel-plugin-transform-simplify-comparison-operators": "^6.8.1",
+    "babel-plugin-transform-undefined-to-void": "^6.8.0",
+    "gulp-babel": "^6.1.2",
+    "gulp-memory-cache": "^0.3.0",
+    "gulp-sourcemaps": "^2.4.0",
+    "gulp-typescript": "^3.1.4",
+    "gulp-util": "^3.0.8",
+    "gulp4": "^4.0.1",
+    "merge2": "^1.0.3",
+    "typescript": "^2.1.5"
+  }
+}

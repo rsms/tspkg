@@ -1,0 +1,812 @@
+#!/usr/bin/env node
+const Path   = require('path')
+const vm     = require('vm')
+const fs     = require('fs')
+const gulp   = require('gulp4')
+const gutil  = require('gulp-util')
+const util   = require('util')
+const assert = require('assert')
+
+function repr(val, depth) {
+  return util.inspect(val, {
+    colors:true,
+    depth: depth === undefined ? 2 : depth,
+    maxArrayLength: 25,
+    breakLength: 80,
+  })
+}
+
+function commonPrefixLen(names, sep) {
+  var i, pos, sc = sep.charCodeAt(0);
+  for (pos = 0; ; pos++) {
+    for (i = 0; i < names.length; i++) {
+      let c = names[i].charCodeAt(pos)
+      if (c && c == names[0].charCodeAt(pos)) {
+        continue;
+      }
+      while (pos > 0 && names[0].charCodeAt(--pos) != sc) {}
+      return pos;
+    }
+  }
+  return 0;
+}
+
+function commonParentDir(paths) {
+  const cplen = commonPrefixLen(paths.map(path => {
+    let p = path.indexOf('*')
+    return (p != -1) ? path.substr(0, p) : path
+  }), '/')
+  return (cplen == 0) ? '/' : paths[0].substr(0, cplen)
+}
+
+function isfile(filename) {
+  try { return fs.statSync(filename).isFile() } catch (_) { return false }
+}
+
+function fmthrtime(t) { // t: [seconds, nanoseconds] => string
+  let ms = (t[1] / 1000000).toFixed(0)
+  if (ms == '0') { ms = '<1' }
+  return t[0] <= 0 ? (ms + 'ms') :
+         (t[0] + '.' + ms + 's') ;
+}
+
+function parseargs(inargs) {
+  let optsEnded = false, m
+  const opts = {__proto__:{
+    forEach(f, ctx) {
+      Object.keys(this).forEach(k => f.call(this, k, this[k]), ctx)
+    },
+    get(namePrefix, defaultValue) {
+      for (let name of Object.keys(this)) {
+        if (name.length >= namePrefix.length && name.indexOf(namePrefix) == 0) {
+          return {name, value: this[name]};
+        }
+      }
+      return {name: namePrefix, value: defaultValue}
+    }
+  }}
+  const re = /^-{1,2}([^=:]+)(?:\s*[=:]\s*(.*)|)$/
+  const args = []
+  let argsEnded = false
+  for (let i = 0, L = inargs.length; i != L; ++i) {
+    let arg = inargs[i]
+    if (arg == '--') {
+      argsEnded = true
+    } else if (!argsEnded && arg[0] == '-') {
+      let m = re.exec(arg)
+      opts[m[1]] = m[2] === undefined ? true : m[2]
+    } else {
+      args.push(arg)
+    }
+  }
+  return {opts, args}
+}
+
+function checkArg(argname, value, type, progpath) {
+  if (typeof value != type) {
+    console.error(
+      `Unexpected argument value ${JSON.stringify(value)} for -${argname}.` +
+      ` Expected ${type}.`
+    )
+    usage(progpath)
+  } else if (type == 'string') {
+    value = value.trim()
+    if (value.length == 0) {
+      console.error(`Argument -${argname}=<string> requires a non-empty value.`)
+      usage(progpath)
+    }
+  }
+  return value
+}
+
+function parseBool(s) {
+  if (typeof s == 'string') {
+    s = s.toLowerCase()
+    return s == 'true' || s == 'yes' || s == 'on' || !!parseFloat(s)
+  }
+  return !!s
+}
+
+function usage(progpath, askedForHelp) {
+  const progname = Path.basename(progpath)
+  const desc0 = [
+    'Build TypeScript and JavaScript projects into distributable packages.',
+  ], desc1 = [
+`Usage: ${progpath} [options] [<srcpath>]
+options:
+  -h[elp]               Show description and detailed help for this program.
+  -o[output]=<outfile>  Filename prefix for output(s). E.g. 'a/b' => 'a/b.js'.
+                        If not provided, "<srcpath>/<pkgname>" is used when
+                        <srcpath> is a directory. Otherwise the file extension
+                        of <srcpath> is replaced with ".o".
+  -p[kg]=<pkgname>      Name to be used for package when exported globally
+                        (i.e. when there's no package management.) If not
+                        provided, <pkgname> is inferred from <srcpath>.
+  -O                    Produce optimized output. See -help for details.
+  -g                    Produce debuggable output. See -help for details.
+  -w[atch]              Watch input files and recompile as they change.
+  -compress=<bool>      Explicitly enable or disable compression of generated
+                        code. Defaults to "true" if -O is provided, otherwise
+                        defaults to "false".
+  -ts-disable           Ignore and do not attempt to interpret the project as
+                        a TypeScript project.
+  -ts-options=<json>    Apply <json> to TypeScript "compilerOptions" object.
+  -map-root=<dir>       Source map "sourceRoot" value. Inferred from <srcpath>
+                        and <outfile> by default.
+  -no-maps              Do not read nor write any source maps.
+  -v[erbose]            Print details to stdout.
+  -debug                Print lots of details to stdout. Implies -v.
+  -dry                  Just print the configuration and exit.
+`], desc2 = [`
+<srcpath>
+  Either a single javascript file or the path to a directory containing
+  package source. If omitted, the current working directory is used.
+
+<outfile>
+  A filename prefix that is joined by type suffix for each output file
+  produced. For a TypeScript project with declaration files, -o=a/b would
+  create the following files:
+    a/b.js       Code
+    a/b.js.map   Source map
+    a/b.d.ts     Type declarations
+
+-g
+  When provided:
+  • Compression is disabled by default (pass -compress=true to explicitly
+    enable).
+  • All instances of \`const DEBUG = <constlit>\` are changed to replace
+    \`<constlit>\` with \`true\`. This can be used to gate debugging code.
+
+-O
+  When provided:
+  • Enables optimizations (dead-code elimination, constant folding, etc.)
+  • Enables compression (pass -compress=false to explicitly disable.)
+  • Unless -g is provided, all instances of \`const DEBUG = <constlit>\` are
+    changed to replace \`<constlit>\` with \`false\`. This can be used to have
+    debugging code stripped from the generated code, since constant folding
+    together with dead-code elimination should remove code gated on "DEBUG".
+
+  When neither -g or -O is provided, the goal of tspkg is to generate output
+  as quickly as possible.
+
+  Example of DEBUG elimination; in.js:
+
+    const DEBUG = 0
+    const assert = DEBUG ? require('assert') : function(){}
+    export function bob(x) {
+      assert(x > 0)
+      return 4 / x
+    }
+
+  ${progname} -g in.js  # => out.js:
+
+    const DEBUG = 1
+    const assert = DEBUG ? require('assert') : function(){}
+    exports.bob = function bob(x) {
+      return 4 / x
+    }
+
+  ${progname} -O in.js  # => out.js:
+
+    exports.bob=function(x){return 4/x};
+
+  Note: Not providing -g or -O would yield code that's functionally identical
+  to the in.js example above.
+`];
+  if (askedForHelp) {
+    console.error(desc0.concat(desc1.concat(desc2)).join('\n'))
+    process.exit(0)
+  } else {
+    console.error(desc1.join('\n') + `\nTry "${progpath} -help" for more information`)
+    process.exit(1)
+  }
+}
+
+function findTSConfig(srcpath) {
+  let srcdir = srcpath
+  let maxdepth = 3
+  while (maxdepth--) {
+    // FIXME: dirname('/') on windows
+    let filename = Path.join(srcdir, 'tsconfig.json')
+    if (isfile(filename)) {
+      return filename
+    }
+    if (srcdir == '/') {
+      break
+    }
+    srcdir = Path.dirname(srcdir)
+  }
+  return null
+}
+
+function inferSrcdir(cfg) {
+  return cfg.tsconfigFile ? Path.dirname(cfg.tsconfigFile) :
+         cfg.srcpathIsFile ? Path.dirname(cfg.srcpathabs) :
+         cfg.srcpathabs
+  // return commonParentDir(Array.isArray(srcfiles) ? srcfiles : [srcfiles])
+}
+
+function inferPkgname(cfg) {
+  return cfg.srcpathIsFile ? Path.basename(cfg.srcpathabs, Path.extname(cfg.srcpathabs)) :
+         Path.basename(cfg.srcdir)
+}
+
+function inferOutfile(cfg) {
+  return cfg.srcpathIsFile ?
+    Path.join(Path.dirname(cfg.srcpath), cfg.pkgname + '.out') :
+      // srcpath="foo/bar.js" => "foo/bar.out"
+    Path.join(cfg.srcpath, cfg.pkgname)
+      // srcpath="foo/bar" => "foo/bar/bar"
+}
+
+function prepareInput(cfg) {
+  if (cfg.tsconfigFile) {
+    cfg.tsconfig = vm.runInNewContext(
+      '1 && ' + fs.readFileSync(cfg.tsconfigFile, {encoding:'utf8'})
+    )
+    // console.log('tsconfig:', cfg.tsconfig)
+
+    if (cfg.tsconfig.include) {
+      cfg.srcfiles = cfg.tsconfig.include
+    } else if (cfg.tsconfig.files) {
+      cfg.srcfiles = cfg.tsconfig.files
+    }
+
+    cfg.srcfilesExclude = cfg.tsconfig.exclude
+
+  } else {
+    cfg.srcfiles = [ Path.join(cfg.srcdir, '**/*.js') ]
+  }
+  cfg.srcfilesabs = cfg.srcfiles.map(name => Path.resolve(cfg.srcdir, name))
+  // const sourceRoot = commonParentDir(Array.isArray(srcfiles) ? srcfiles : [srcfiles])
+  // console.log('sourceRoot:', sourceRoot)
+}
+
+function applyTSOptions(cfg, optionsJSON) {
+  const options = JSON.parse(optionsJSON)
+  if (cfg.tsconfig) {
+    if (cfg.tsconfig.compilerOptions) {
+      Object.assign(cfg.tsconfig.compilerOptions, options)
+    } else {
+      cfg.tsconfig.compilerOptions = options
+    }
+  } else {
+    cfg.tsconfig = {compilerOptions: options}
+  }
+}
+
+const cfg = {
+  debug: false,
+  optimize: false,
+  compress: undefined,
+  verbose: 0, // 1 = verbose, 2 = very verbose (-debug option)
+  watch: false,
+  
+  srcpath: '.',   // aka pkgdir
+  srcpathabs: '',
+  srcpathIsFile: false, // true when file, false when dir or pattern
+  srcdir: '',  // = isfile(srcpathabs) ? dirname(srcpathabs) : srcpathabs
+  srcfiles: [],
+  srcfilesabs: [],
+  srcfilesExclude: null, // string or string[] of glob patterns or paths to exlude
+  outfile: '',
+  outfileabs: '',
+  outdir: '', // = dirname(outfileabs)
+  pkgname: '',
+
+  sourceMapsEnabled: true,
+  sourceMapRoot: null,
+
+  tsconfigFile: null, // non-null for TS projects
+  tsconfig: null, // loaded by prepareInput
+}
+
+function main(argv, progpath) {
+  const {opts, args} = parseargs(argv)
+  // console.log({opts, args})
+  opts.forEach((k, v) => {
+    switch (k[0]) {
+      case 'h': usage(progpath, true); break
+      case 'o': cfg.outfile = checkArg(k, v, 'string', progpath); break
+      case 'p': cfg.pkgname = checkArg(k, v, 'string', progpath); break
+      case 'O': cfg.optimize = true; break
+      case 'g': cfg.debug = true; break
+      case 'w': cfg.watch = true; break
+      case 'v': cfg.verbose = 1; break
+      case 'd': {
+        if (k == 'debug') { cfg.verbose = 2; break }
+        if (k == 'dry') { break }
+      }
+      case 't': {
+        if (k == 'ts-disable' || k == 'ts-options') { break }
+      }
+      default: {
+        switch (k) {
+          case 'compress': cfg.compress = parseBool(v); break
+          case 'no-maps': cfg.sourceMapsEnabled = false; break;
+          case 'sourceMapRoot': cfg.sourceMapRoot = v; break;
+
+          case 'ts-disable':
+          case 'ts-options':
+          case 'dry':
+            break
+          
+          default: {
+            console.error(`Unexpected argument -${k}.`)
+            usage(progpath)
+          }
+        }
+      }
+    }
+  })
+
+  if (cfg.compress === undefined) {
+    // unless specified, enable compression when optimization is requested
+    cfg.compress = cfg.optimize
+  }
+
+  // Parse options. Order matters.
+  cfg.srcpath = args[0] || cfg.srcpath
+  cfg.srcpathabs = Path.resolve(cfg.srcpath)
+  cfg.srcpathIsFile = cfg.srcpathabs.indexOf('*') != -1 || isfile(cfg.srcpathabs)
+  if (!opts['ts-disable']) {
+    cfg.tsconfigFile = findTSConfig(cfg.srcpathabs)
+  }
+  cfg.srcdir = inferSrcdir(cfg)
+  if (!cfg.pkgname) { cfg.pkgname = inferPkgname(cfg) }
+
+  // outdir must be relative to outfile in such a way that
+  //   outdir + outfile = cfg.outfileabs
+  //
+  // Thus:
+  //  1. Let outfile be the result of the value of the -o option
+  //  2. If outfile is empty (no -o option or empty option):
+  //     2.a. If srcpathabs is a file, let outfile be the result of joining the
+  //          dirname of srcpath with pkgname and ".out".
+  //     2.b. If srcpathabs is a directory or glob pattern, let outfile be the
+  //          result of joining srcpath with pkgname
+  //  3. Let outfileabs be the absolute path of outfile resolved from the
+  //     current working directory
+  //  4. Let outdir be the dirname of outfileabs
+  //  5. Let outfile' be the basename of outfile
+  //
+  if (!cfg.outfile) { cfg.outfile = inferOutfile(cfg) }
+  if (cfg.outfile.substr(-3) == '.js') {
+    // strip ".js" suffix since we add it on depending on .d.ts, or .js/.js.map
+    cfg.outfile = cfg.outfile.substr(0, cfg.outfile.length - 3)
+  }
+  cfg.outfileabs = Path.resolve(cfg.outfile)
+  cfg.outfile = Path.basename(cfg.outfile)
+  cfg.outdir = Path.dirname(cfg.outfileabs)
+
+  prepareInput(cfg)
+
+  if (opts['ts-options']) {
+    applyTSOptions(cfg, opts['ts-options'])
+  }
+
+  if (opts.dry || cfg.verbose) {
+    const keys = Object.keys(cfg)
+    const klen = keys.reduce((z, k) => Math.max(z, k.length), 0)
+    const sp = '                           '
+    console.log(
+      keys
+        .filter(k => (cfg.verbose > 1) || !({tsconfig:1, srcfilesabs:1})[k] )
+        .map(k => k + ': ' + sp.substr(0, klen - k.length) + repr(cfg[k]))
+        .join('\n')
+    )
+    if (opts.dry) {
+      process.exit(0)
+    }
+  }
+
+  // proper working directory required by typescript to resolve types and modules
+  process.chdir(cfg.srcpathabs)
+
+  gulp.on('task_start', e => {
+    // if (!cfg.verbose || ({default:1})[e.task]) { return }
+    console.log(gutil.colors.blue.bold(e.task))
+  });
+
+  gulp.on('task_stop', e => {
+    // if (({default:1, watch:1})[e.task]) { return }
+    const C = gutil.colors
+    console.log(`${C.green.bold(e.task)} done ${C.grey('('+fmthrtime(e.hrDuration)+')')}`)
+  })
+
+  gulp.on('task_err', e => {
+    var msg = formatError(e);
+    var time = e.hrDuration;
+    console.error(`${e.task} failed (${fmthrtime(e.hrDuration)})\n${msg}`);
+  })
+
+  // gulp v>=4
+  gulp.parallel(['compile'])(function(err) {
+    if (err) {
+      if (!cfg.watch) {
+        process.exit(1)
+      }
+    } else if (cfg.watch) {
+      gulp.watch(cfg.srcfiles, gulp.series('compile'));
+      // gulp.parallel(['watch'])(function(err) {
+      //   if (err) {
+      //     process.exit(1);
+      //   }
+      // });
+    }
+  });
+  // gulp v<=3
+  // gulp.start.apply(gulp, [cfg.watch ? 'watch' : 'compile']);
+
+  function formatError(e) {
+    if (!e.err) { return e.message; }
+    // PluginError
+    if (typeof e.err.showStack === 'boolean') {
+      return e.err.toString();
+    }
+    // Normal error
+    if (e.err.stack) {
+      return e.err.stack;
+    }
+    // Unknown (string, number, etc.)
+    return new Error(String(e.err)).stack;
+  }
+}
+
+
+function makeTSCompilerOptions(cfg) {
+  // These settings are used for compilerOptions in the absence of cfg.tsconfig.compilerOptions
+  // options which might be replaced by tsconfig
+  const defaultOptions = {
+    pretty: true,
+    alwaysStrict: true,
+    forceConsistentCasingInFileNames: true,
+    // declaration: true,
+    // noImplicitAny: false,
+    // experimentalDecorators: true,
+    // emitDecoratorMetadata: true,
+  }
+
+  // options which replace those of tsconfig
+  let options = {
+    module: "es2015", // 'commonjs', 'amd', 'system', 'umd' or 'es2015'
+    target: "ESNEXT", // results to through babel
+    lib: [ "es6", "dom" ],
+    noEmitOnError: true,
+    outDir: cfg.outdir,
+    baseUrl: cfg.srcpathabs,
+    //rootDirs: [cfg.srcpathabs],
+  }
+
+  // Options unsupported by gulp-typescript:
+  // - sourceMap, inlineSourceMap, inlineSources, sourceRoot (managed by gulp-sourcemaps)
+  // - watch
+  // - project
+  // - help, version
+
+  options = Object.assign(
+    (cfg.tsconfig && cfg.tsconfig.compilerOptions ?
+      Object.assign({}, defaultOptions, cfg.tsconfig.compilerOptions) :
+      Object.assign({}, defaultOptions)),
+    options)
+
+  if (cfg.compress) {
+    options.removeComments = true
+  }
+  if (options.outFile) {
+    delete options.outFile
+  }
+  return options
+}
+
+const BABEL_STAGE_1 = 1  // process individual files
+const BABEL_STAGE_2 = 2  // process final package file
+let babelConfig = new Map; // state => config
+
+function makeBabelConfig(cfg, stage) {
+  let C = babelConfig.get(stage)
+  if (C) {
+    return C
+  }
+
+  const builtin = 'tspkg:'
+
+  C = {
+    plugins: [],
+    compact:    cfg.compress,
+    minified:   cfg.compress,
+    comments:   !cfg.compress,
+    sourceRoot: cfg.srcdir,
+  }
+
+  if (stage == BABEL_STAGE_1 && (cfg.debug || cfg.optimize)) {
+    // prep plugin runs for both debug and optimize
+    C.plugins.splice(C.plugins.length, 0,
+      [builtin + "prep", {
+        "consts": (cfg.debug || cfg.optimize) ? {
+          "DEBUG": {type:"BooleanLiteral", value: cfg.debug},
+        } : {},
+      }]
+    )
+  }
+
+  if (cfg.optimize) {
+    // plugins enabled when asked to optimize output
+
+    // all stages
+    C.plugins = C.plugins.concat([
+      "minify-constant-folding",
+    ])
+
+    if (stage == BABEL_STAGE_1) {
+      C.plugins = C.plugins.concat([
+        builtin + "dce",
+        [builtin + "pkg", {strict:true}],
+      ])
+    } else if (stage == BABEL_STAGE_2) {
+      C.plugins = C.plugins.concat([
+        builtin + "dce",
+        builtin + "minify", // eliminates calls to empty functions and does some DCE and CF
+        builtin + "dce",
+        "minify-flip-comparisons",
+        "minify-guarded-expressions",
+        "minify-infinity",
+        "minify-numeric-literals",
+        "minify-replace",
+        "minify-simplify",
+        "minify-type-constructors",
+        "transform-member-expression-literals",
+        "transform-merge-sibling-variables",
+        // "transform-minify-booleans", // true => !0, false => !1
+        "transform-property-literals",
+        "transform-regexp-constructors",
+        "transform-simplify-comparison-operators",
+        "transform-undefined-to-void",
+        "minify-mangle-names",
+      ])
+    }
+
+  } else {
+    // plugins enabled when NOT asked to optimize output
+    if (stage == BABEL_STAGE_1) {
+      C.plugins = C.plugins.concat([
+        [builtin + "pkg", {strict:true}],
+      ])
+    }
+  }
+
+  if (cfg.verbose > 1) {
+    // we print before converting plugin paths
+    console.log('effective babel configuration for stage '+stage+':\n', repr(C))
+  }
+
+  // Babel plugins have complicated resolution rules.
+  // Rewrite plugins to use absolute paths to get around it.
+  const updatePlugin = (path, config) => {
+    if (path.indexOf(builtin) == 0) {
+      return __dirname + "/lib/babel-plugin-" + path.substr(builtin.length)
+    } else if (path[0] !== '/') {
+      return __dirname + '/node_modules/babel-plugin-' + path
+    }
+    return path
+  }
+  C.plugins.forEach((plugin, i) => {
+    if (Array.isArray(plugin)) {
+      plugin[0] = updatePlugin(plugin[0], plugin[1])
+    } else {
+      C.plugins[i] = updatePlugin(plugin)
+    }
+  })
+
+  babelConfig.set(stage, C)
+  return C
+}
+
+
+let tsProject = null // lazily-initialized by task "tsc"
+
+function getTSProject(cfg) {
+  if (!tsProject) {
+    const ts = require('gulp-typescript');
+    // tsProject = ts.createProject(cfg.tsconfigFile, makeTSCompilerOptions(cfg));
+    tsProject = ts.createProject(makeTSCompilerOptions(cfg));
+    tsProject.projectDirectory = cfg.srcpathabs
+    if (cfg.verbose > 1) {
+      // console.log('typescript:\n', repr(tsProject))
+      console.log('effective typescript configuration:\n', repr(tsProject.options))
+    }
+  }
+  return tsProject
+}
+
+
+const through = require('through2')
+let applySourceMap //lazy-loaded
+//
+// interface FileContent {
+//   contents   :Buffer
+//   sourceMap? :SourceMap
+// }
+// interface File extends FileContent {
+//   path     :string
+//   relative :string
+// }
+// transformer :(file :File, encoding :string)=>FileContent|null
+//
+//   If `file` has file.sourceMap, then the transformer should return a new
+//   source map that is the mapping from file.contents to result.contents.
+//
+//   If transformer returns null, no transformation is applied.
+//
+function transform(transformer) {
+  return through.obj(function(file, encoding, callback) {
+    const result = transformer(file, encoding);
+    if (result) {
+      file.contents = result.contents
+      if (file.sourceMap) {
+        // apply source map to the chain
+        if (!result.sourceMap) {
+          throw new Error('transformer did not produce a source map')
+        }
+        if (!applySourceMap) {
+          applySourceMap = require('vinyl-sourcemaps-apply')
+        }
+        applySourceMap(file, result.sourceMap);
+      }
+    }
+    this.push(file);
+    callback();
+  })
+}
+
+
+function dtsModulize() {
+  return transform((file, encoding) => {
+    const filename = file.relative || Path.basename(file.path);
+    assert(!file.sourceMap) // d.ts files are expected not to have source maps
+
+    if (file.contents.length == 0) {
+      return null
+    }
+    
+    assert.equal(filename.substr(-5), '.d.ts')
+    const moduleName = filename.substr(0, file.relative.length-5)
+
+    const indent = '  '
+    const header = 'declare module ' + JSON.stringify(moduleName) + ' {\n' + indent
+    const trailer = '}\n'
+    let body = file.contents.toString(encoding).trim()
+
+    if (body.length > 0) {
+      body = header +
+      (body
+        .replace(/declare /g, '') //<- FIXME proper parser
+        .replace(/(\r?\n)(\s{4})/mg, '$1' + indent)
+        .replace(/(\r?\n)/gm, '$1' + indent))
+      + '\n' + trailer
+    }
+
+    return {
+      contents: new Buffer(body, encoding)
+    }
+  })
+}
+
+function abortOnError() {
+  return through.obj(function(file, encoding, callback) {
+    console.log('file', file)
+    file.on('error', function(a, b, c) {
+      console.error('ERR', a, b, c)
+    });
+    return file
+    // this.push(file);
+    // callback();
+  })
+}
+
+
+gulp.task('compile', () => {
+  // Load these as late as possible since they are HUGE and SLOW.
+  // On a maxed-out MacBook Pro 15" i7:
+  //   gulp: 88.716ms
+  //   gulp-babel: 202.939ms
+  //   gulp-sourcemaps: 17.029ms
+  //   gulp-typescript: 45.445ms
+  //   merge2: 0.376ms
+  //
+  // :.(..
+  //
+  const babel      = require('gulp-babel')
+  const sourcemaps = require('gulp-sourcemaps')
+  const merge      = require('merge2')
+  const concat     = require('./lib/gulp-concat.js')
+  const gulpPkg    = require('./lib/gulp-pkg.js')
+  const cache      = require('gulp-memory-cache');
+
+  let sourceMapRoot = cfg.sourceMapRoot || Path.relative(cfg.srcdir, cfg.srcpathabs)
+  // let sourceMapRoot = Path.relative(cfg.srcdir, cfg.outdir)
+  if (!sourceMapRoot) {
+    // FIXME allow to config; might want URL
+    sourceMapRoot = '.'
+  }
+
+  const tsProject = getTSProject(cfg)
+  let tsResult = gulp.src(cfg.srcfiles, {
+    cwd: cfg.srcdir,
+    ignore: cfg.srcfilesExclude,
+    since: cache.lastMtime('stage1'), // gulp4 feature
+  })
+
+  tsResult = !cfg.sourceMapsEnabled ? tsResult : tsResult.pipe(sourcemaps.init({
+    identityMap: cfg.debug,
+      // Set to true to generate a full valid source map encoding no changes
+      // (slower, only for Javascript and CSS) instead of the default empty
+      // source map (no mappings, fast). Use this option if you get missing
+      // or incorrect mappings, e.g. when debugging.
+    }
+  ))
+
+  tsResult = tsResult.pipe(tsProject())
+    .on('error', function (error) {
+      if (!cfg.watch) {
+        process.exit(1)
+      }
+    });
+
+  const dtsPipe = tsProject.options.declaration && (tsResult.dts
+    .pipe(dtsModulize())
+    .pipe(concat(cfg.outfile + '.d.ts', {
+      separator: cfg.compress ? '' : '\n'
+    }))
+  ) // dtsPipe
+
+  let jsPipe = (tsResult.js
+    .pipe(babel(makeBabelConfig(cfg, BABEL_STAGE_1)))
+    .pipe(cache('stage1'))  // only works with gulp4
+    .pipe(gulpPkg(cfg))
+    .on('error', function (error) {
+      console.error(error.tspkgCode ?
+        (error.styledMessage || error.message) :
+        (error.stack || String(error))
+      )
+      if (!cfg.watch) {
+        process.exit(1)
+      }
+    })
+    .pipe(babel(makeBabelConfig(cfg, BABEL_STAGE_2)))
+  )
+
+  if (cfg.sourceMapsEnabled) {
+    jsPipe = jsPipe.pipe(sourcemaps.write('.', {
+      addComment: true,
+        // true: a comment containing or referencing the source map is added.
+        // false: no comment added (for "secret" source maps)
+      includeContent: false,
+        // true to embed copy of all source code
+      sourceRoot: sourceMapRoot,
+
+      // relative source names that are rooted in sourceRoot
+      mapSources: sourcePath =>
+        Path.relative(cfg.srcdir, Path.join(cfg.outdir, sourcePath)),
+
+      // See https://github.com/floridoo/gulp-sourcemaps#write-options for more
+    }))
+  }
+
+  const outPipe = dtsPipe ? 
+    merge([ dtsPipe, jsPipe ]) :
+    jsPipe
+
+  // Note: Gulp uses vinyl-fs which in turn does this concatenation of
+  // outdir + relative filename.
+  return outPipe.pipe(gulp.dest(cfg.outdir, { cwd: cfg.outdir }))
+})
+
+// needed by gulp3
+// gulp.task('watch', ['compile'], () => {
+//   gulp.watch(cfg.srcfiles, ['compile']);
+// })
+
+if (module.id == '.') {
+  main(process.argv.slice(2), process.env._ || basename(process.argv[1]))
+}

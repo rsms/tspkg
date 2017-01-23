@@ -1,0 +1,6 @@
+.DS_Store
+*.map
+*.lock
+*.tmp
+_local
+node_modules

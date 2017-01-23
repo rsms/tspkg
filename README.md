@@ -8,7 +8,7 @@ Creates small, fast and easily-distributable packages from TypeScript projects.
 - Import/export elimination
 - Eliding or elimination of package-internal modules
 
-Example of constant-folding and DCE working together:
+Example of constant-folding & DCE working together:
 
 input.ts:
 
@@ -39,7 +39,32 @@ function a(x) {
 }
 ```
 
-CLI synopsis:
+## Acyclic dependency graph
+
+tspkg enforces [dependency graphs](https://en.wikipedia.org/wiki/Dependency_graph) to be [acyclic](https://en.wikipedia.org/wiki/Directed_acyclic_graph).
+[Circular dependencies](https://en.wikipedia.org/wiki/Circular_dependency#Problems_of_circular_dependencies) leads to error-prone and indeterministic programs, and makes code reuse harder.
+
+Say we have the following dependency graph for an imaginary project that receives
+some messages over the network and autmatically replies to them, sometimes via email (SMTP):
+
+![](misc/example1-acyclic.svg)
+
+Now, say we're working on `fmtmsg` and we realize that by using functionality in `msg/parse` we can save ourselves some code-writing. Perhaps `msg/parse` provides a helpful function for folding HTML into plain text. Not knowing that `msg/parse` depends on `msg/classify` which in turn depends on `fmtmsg`, we import `msg/parse` and suddenly Weird Things™ starts happening, like sometimes when we run our program the module-constant "foo" is "1", but sometimes it's "2".
+
+![](misc/example1-cyclic.svg)
+
+tspkg will detect these situations and stop you from building Weird Packages™. Trying to build a package with the above configuration would make tspkg stop with an error:
+
+```txt
+error TSPKG1: Cyclic dependency detected: msg/parse -> msg/classify -> fmtmsg -> msg/parse
+```
+
+We can fix this by moving the helpful function found in `msg/parse` to a separate module/file:
+
+![](misc/example1-acyclic2.svg)
+
+
+## CLI synopsis
 
 ```txt
 Usage: ./tspkg [options] [<srcpath>]

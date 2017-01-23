@@ -47,11 +47,11 @@ tspkg enforces [dependency graphs](https://en.wikipedia.org/wiki/Dependency_grap
 Say we have the following dependency graph for an imaginary project that receives
 some messages over the network and autmatically replies to them, sometimes via email (SMTP):
 
-![](misc/example1-acyclic.svg)
+<img src="misc/example1-acyclic.png" width="256">
 
 Now, say we're working on `fmtmsg` and we realize that by using functionality in `msg/parse` we can save ourselves some code-writing. Perhaps `msg/parse` provides a helpful function for folding HTML into plain text. Not knowing that `msg/parse` depends on `msg/classify` which in turn depends on `fmtmsg`, we import `msg/parse` and suddenly Weird Things™ starts happening, like sometimes when we run our program the module-constant "foo" is "1", but sometimes it's "2".
 
-![](misc/example1-cyclic.svg)
+<img src="misc/example1-cyclic.png" width="256">
 
 tspkg will detect these situations and stop you from building Weird Packages™. Trying to build a package with the above configuration would make tspkg stop with an error:
 
@@ -61,7 +61,7 @@ error TSPKG1: Cyclic dependency detected: msg/parse -> msg/classify -> fmtmsg ->
 
 We can fix this by moving the helpful function found in `msg/parse` to a separate module/file:
 
-![](misc/example1-acyclic2.svg)
+<img src="misc/example1-acyclic2.png" width="256">
 
 
 ## CLI synopsis

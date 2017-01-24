@@ -4,8 +4,8 @@
     "target": "es6",
     "noImplicitAny": false,
     "sourceMap": true,
-    "outDir": "tsc-out",
-    // "outFile": "tsc-out/a.js",
+    "outDir": "out",
+    // "outFile": "out/a.js",
     //"declaration": true, // not compatible with allowJs
     "allowJs": true,
     "types": ["node"]

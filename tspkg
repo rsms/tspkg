@@ -232,11 +232,17 @@ function inferPkgname(cfg) {
 }
 
 function inferOutfile(cfg) {
-  return cfg.srcpathIsFile ?
-    Path.join(Path.dirname(cfg.srcpath), cfg.pkgname + '.out') :
-      // srcpath="foo/bar.js" => "foo/bar.out"
-    Path.join(cfg.srcpath, cfg.pkgname)
-      // srcpath="foo/bar" => "foo/bar/bar"
+  const tscfg = cfg.tsconfig && cfg.tsconfig.compilerOptions
+  if (tscfg && tscfg.outFile) {
+    return tscfg.outFile
+  }
+
+  const outdir =
+    (tscfg && tscfg.outDir) ? tscfg.outDir :
+    cfg.srcpathIsFile ? Path.dirname(cfg.srcpath) :
+    cfg.srcpath
+
+  return Path.join(outdir, (outdir == '..') ? (cfg.pkgname + '.out') : cfg.pkgname)
 }
 
 function prepareInput(cfg) {
@@ -252,12 +258,12 @@ function prepareInput(cfg) {
       cfg.srcfiles = cfg.tsconfig.files
     }
 
-    cfg.srcfilesExclude = cfg.tsconfig.exclude
+    cfg.srcfilesExclude = cfg.tsconfig.exclude || null
 
   } else {
     cfg.srcfiles = [ Path.join(cfg.srcdir, '**/*.js') ]
   }
-  cfg.srcfilesabs = cfg.srcfiles.map(name => Path.resolve(cfg.srcdir, name))
+  //cfg.srcfilesabs = cfg.srcfiles.map(name => Path.resolve(cfg.srcdir, name))
   // const sourceRoot = commonParentDir(Array.isArray(srcfiles) ? srcfiles : [srcfiles])
   // console.log('sourceRoot:', sourceRoot)
 }
@@ -287,7 +293,6 @@ const cfg = {
   srcpathIsFile: false, // true when file, false when dir or pattern
   srcdir: '',  // = isfile(srcpathabs) ? dirname(srcpathabs) : srcpathabs
   srcfiles: [],
-  srcfilesabs: [],
   srcfilesExclude: null, // string or string[] of glob patterns or paths to exlude
   outfile: '',
   outfileabs: '',
@@ -355,6 +360,8 @@ function main(argv, progpath) {
   cfg.srcdir = inferSrcdir(cfg)
   if (!cfg.pkgname) { cfg.pkgname = inferPkgname(cfg) }
 
+  prepareInput(cfg)
+
   // outdir must be relative to outfile in such a way that
   //   outdir + outfile = cfg.outfileabs
   //
@@ -375,11 +382,9 @@ function main(argv, progpath) {
     // strip ".js" suffix since we add it on depending on .d.ts, or .js/.js.map
     cfg.outfile = cfg.outfile.substr(0, cfg.outfile.length - 3)
   }
-  cfg.outfileabs = Path.resolve(cfg.outfile)
+  cfg.outfileabs = Path.resolve(cfg.srcdir, cfg.outfile)
   cfg.outfile = Path.basename(cfg.outfile)
   cfg.outdir = Path.dirname(cfg.outfileabs)
-
-  prepareInput(cfg)
 
   if (opts['ts-options']) {
     applyTSOptions(cfg, opts['ts-options'])
@@ -391,7 +396,7 @@ function main(argv, progpath) {
     const sp = '                           '
     console.log(
       keys
-        .filter(k => (cfg.verbose > 1) || !({tsconfig:1, srcfilesabs:1})[k] )
+        .filter(k => (cfg.verbose > 1) || !({tsconfig:1})[k] )
         .map(k => k + ': ' + sp.substr(0, klen - k.length) + repr(cfg[k]))
         .join('\n')
     )
@@ -401,23 +406,52 @@ function main(argv, progpath) {
   }
 
   // proper working directory required by typescript to resolve types and modules
-  process.chdir(cfg.srcpathabs)
+  process.chdir(cfg.srcdir)
 
-  gulp.on('task_start', e => {
-    // if (!cfg.verbose || ({default:1})[e.task]) { return }
-    console.log(gutil.colors.blue.bold(e.task))
+  const C = gutil.colors
+
+  gulp.on('start', e => { // gulp3 calls this task_start
+    // if (!cfg.verbose || ({default:1})[e.name]) { return }
+    console.log(gutil.colors.blue.bold(e.name))
   });
 
-  gulp.on('task_stop', e => {
-    // if (({default:1, watch:1})[e.task]) { return }
-    const C = gutil.colors
-    console.log(`${C.green.bold(e.task)} done ${C.grey('('+fmthrtime(e.hrDuration)+')')}`)
+  gulp.on('stop', e => { // gulp3 calls this task_stop
+    // if (({default:1, watch:1})[e.name]) { return }
+    console.log(`${C.green.bold(e.name)} done ${C.grey('('+fmthrtime(e.duration)+')')}`)
   })
 
-  gulp.on('task_err', e => {
-    var msg = formatError(e);
-    var time = e.hrDuration;
-    console.error(`${e.task} failed (${fmthrtime(e.hrDuration)})\n${msg}`);
+  gulp.on('error', e => { // gulp3 calls this task_err
+    const err = e.error
+    let msg = C.red.bold(e.name + ' failed')
+    if (err.name) {
+      msg += ' with ' + err.name
+    }
+    if (e.duration) {
+      msg += ' after ' + fmthrtime(e.duration)
+    }
+    if (err.plugin) {
+      msg += ' in ' + err.plugin
+    }
+    msg += ':\n'
+    if (err.showStack) {
+      msg += err.stack
+    } else if (err.fileName) {
+      let errmsg = err.message
+      if (errmsg.indexOf(err.fileName + ':') == 0) {
+        errmsg = errmsg.substr(err.fileName.length + 1).trim()
+      }
+
+      msg += C.cyan.bold(
+        err.fileName.substr(0, cfg.srcdir.length) == cfg.srcdir ?
+          Path.relative(cfg.srcdir, err.fileName) : err.fileName
+      ) + ': ' + errmsg
+    } else {
+      msg += err.toString()
+    }
+    console.error(msg)
+    if (cfg.verbose > 1 && e.error.stack) {
+      console.error(e.error.stack)
+    }
   })
 
   // gulp v>=4
@@ -474,8 +508,8 @@ function makeTSCompilerOptions(cfg) {
     lib: [ "es6", "dom" ],
     noEmitOnError: true,
     outDir: cfg.outdir,
-    baseUrl: cfg.srcpathabs,
-    //rootDirs: [cfg.srcpathabs],
+    baseUrl: cfg.srcdir,
+    //rootDirs: [cfg.srcdir],
   }
 
   // Options unsupported by gulp-typescript:
@@ -610,7 +644,7 @@ function getTSProject(cfg) {
     const ts = require('gulp-typescript');
     // tsProject = ts.createProject(cfg.tsconfigFile, makeTSCompilerOptions(cfg));
     tsProject = ts.createProject(makeTSCompilerOptions(cfg));
-    tsProject.projectDirectory = cfg.srcpathabs
+    tsProject.projectDirectory = cfg.srcdir
     if (cfg.verbose > 1) {
       // console.log('typescript:\n', repr(tsProject))
       console.log('effective typescript configuration:\n', repr(tsProject.options))
@@ -692,18 +726,6 @@ function dtsModulize() {
   })
 }
 
-function abortOnError() {
-  return through.obj(function(file, encoding, callback) {
-    console.log('file', file)
-    file.on('error', function(a, b, c) {
-      console.error('ERR', a, b, c)
-    });
-    return file
-    // this.push(file);
-    // callback();
-  })
-}
-
 
 gulp.task('compile', () => {
   // Load these as late as possible since they are HUGE and SLOW.
@@ -723,19 +745,21 @@ gulp.task('compile', () => {
   const gulpPkg    = require('./lib/gulp-pkg.js')
   const cache      = require('gulp-memory-cache');
 
-  let sourceMapRoot = cfg.sourceMapRoot || Path.relative(cfg.srcdir, cfg.srcpathabs)
-  // let sourceMapRoot = Path.relative(cfg.srcdir, cfg.outdir)
-  if (!sourceMapRoot) {
-    // FIXME allow to config; might want URL
-    sourceMapRoot = '.'
-  }
+  const sourceMapRoot = cfg.sourceMapRoot || Path.relative(cfg.outdir, cfg.srcdir)
 
   const tsProject = getTSProject(cfg)
   let tsResult = gulp.src(cfg.srcfiles, {
-    cwd: cfg.srcdir,
-    ignore: cfg.srcfilesExclude,
-    since: cache.lastMtime('stage1'), // gulp4 feature
-  })
+    cwd:    cfg.srcdir,
+    // ignore: cfg.srcfilesExclude,
+    // since:  cache.lastMtime('stage1'), // gulp4 feature
+  }).pipe(through.obj((file, encoding, callback) => {
+    // Fix file base
+    file.base = cfg.srcdir
+    if (cfg.verbose > 1) {
+      console.log('[src]', JSON.stringify(file.relative), 'from', JSON.stringify(cfg.srcdir))
+    }
+    callback(null, file)
+  }))
 
   tsResult = !cfg.sourceMapsEnabled ? tsResult : tsResult.pipe(sourcemaps.init({
     identityMap: cfg.debug,

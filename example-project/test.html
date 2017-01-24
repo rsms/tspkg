@@ -1,17 +1,27 @@
 <html>
 <script type="text/javascript">
 
-window['util'] = {
-  inspect: JSON.stringify
-}
-window['assert'] = function(cond) { if (!cond) throw new Error('assertion failure') };
-window['assert'].equal = function(a,b) { window['assert'](a==b) }
+// Mock "modules" imported by our example-project package.
+// Packages created with tspkg supports the following ways of importing
+// external modules:
+//  - a global require function (used in this example)
+//  - a global AMD define function, for apps using an AMD loader
+//  - plain global object (modules are loaded from `this[id]`)
+var require = (function(){
+  var m = {
+    util: { inspect: JSON.stringify },
+    assert: function(cond) { if (!cond) throw new Error('assertion failure') },
+    vm: { createContext: function(){} },
+  }
+  m.assert.equal = function(a,b) { window['assert'](a==b) }
+  return function(id) { return m[id] }
+})()
 
 </script>
-<script type="text/javascript" src="out/a.js"></script>
+<script type="text/javascript" src="out/example-project.js"></script>
 <script type="text/javascript">
 
-console.log(window['example-project'])
+console.log('module:', window['example-project'])
 
 </script>
 

@@ -6,8 +6,8 @@
     "sourceMap": true,
     "outDir": "out",
     // "outFile": "out/a.js",
-    "declaration": true, // not compatible with allowJs
-    // "allowJs": true,
+    //"declaration": true, // not compatible with allowJs
+    "allowJs": true,
     "types": ["node"],
     "rootDir": "src",
     "rootDirs": ["."]

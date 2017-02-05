@@ -1,4 +1,4 @@
-import {f} from './f'
+import {f} from '../f'
 import {inspect} from 'util'
 import x from 'foo'
 import {createContext} from 'vm'

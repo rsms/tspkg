@@ -1,6 +1,6 @@
 import a from './a'
 import {a2} from './a'
-import {d} from './d'
+import {d} from './foo/d.js'
 
 export interface Bar {
   readonly done :number

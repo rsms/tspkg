@@ -1,6 +1,6 @@
 {
   "name": "tspkg",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Create small, fast and easily-distributable packages from TypeScript projects",
   "bin": {
     "tspkg": "./tspkg"
@@ -11,6 +11,8 @@
     "lib/babel-plugin-minify.js",
     "lib/babel-plugin-pkg.js",
     "lib/babel-plugin-prep.js",
+    "lib/babel-plugin-transform-es2015-modules-commonjs.js",
+    "lib/gulp-babel.js",
     "lib/gulp-concat.js",
     "lib/gulp-pkg.js",
     "lib/mark-eval-scope.js",
@@ -32,8 +34,8 @@
   "author": "Rasmus Andersson <rsms.me>",
   "license": "MIT",
   "dependencies": {
+    "babel-helper-remove-or-void": "^0.0.1",
     "babel-plugin-minify-constant-folding": "^0.0.3",
-    "babel-plugin-minify-dead-code-elimination": "^0.1.2",
     "babel-plugin-minify-flip-comparisons": "^0.0.2",
     "babel-plugin-minify-guarded-expressions": "^0.0.4",
     "babel-plugin-minify-infinity": "^0.0.1",
@@ -42,7 +44,6 @@
     "babel-plugin-minify-replace": "^0.0.2",
     "babel-plugin-minify-simplify": "^0.0.6",
     "babel-plugin-minify-type-constructors": "^0.0.3",
-    "babel-plugin-transform-es2015-modules-commonjs": "^6.22.0",
     "babel-plugin-transform-member-expression-literals": "^6.8.1",
     "babel-plugin-transform-merge-sibling-variables": "^6.8.1",
     "babel-plugin-transform-minify-booleans": "^6.8.0",
@@ -50,8 +51,10 @@
     "babel-plugin-transform-regexp-constructors": "^0.0.5",
     "babel-plugin-transform-simplify-comparison-operators": "^6.8.1",
     "babel-plugin-transform-undefined-to-void": "^6.8.0",
+    "concat-with-sourcemaps": "^1.0.4",
     "gulp-babel": "^6.1.2",
-    "gulp-memory-cache": "^0.3.0",
+    "gulp-cached": "^1.1.1",
+    "gulp-remember": "^0.3.1",
     "gulp-sourcemaps": "^2.4.0",
     "gulp-typescript": "^3.1.4",
     "gulp-util": "^3.0.8",

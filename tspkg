@@ -7,12 +7,13 @@ const gutil  = require('gulp-util')
 const util   = require('util')
 const assert = require('assert')
 
-function repr(val, depth) {
+function repr(val, depth, showHidden) {
   return util.inspect(val, {
     colors:true,
     depth: depth === undefined ? 2 : depth,
     maxArrayLength: 25,
     breakLength: 80,
+    showHidden
   })
 }
 
@@ -124,16 +125,18 @@ options:
                         provided, <pkgname> is inferred from <srcpath>.
   -O                    Produce optimized output. See -help for details.
   -g                    Produce debuggable output. See -help for details.
-  -w[atch]              Watch input files and recompile as they change.
+  -i[ncr], -w[atch]     Incremental compilation (watches source for changes).
   -compress=<bool>      Explicitly enable or disable compression of generated
                         code. Defaults to "true" if -O is provided, otherwise
                         defaults to "false".
-  -ts-disable           Ignore and do not attempt to interpret the project as
-                        a TypeScript project.
-  -ts-options=<json>    Apply <json> to TypeScript "compilerOptions" object.
+  -ts-disable           Do not attempt to interpret the package as a
+                        TypeScript project.
+  -ts-options=<json>    Apply <json> to TypeScript "compilerOptions" object on
+                        top of options from tsconfig file.
   -map-root=<dir>       Source map "sourceRoot" value. Inferred from <srcpath>
                         and <outfile> by default.
   -no-maps              Do not read nor write any source maps.
+  -no-incr-cache        Disable caching for incremental builds.
   -v[erbose]            Print details to stdout.
   -debug                Print lots of details to stdout. Implies -v.
   -dry                  Just print the configuration and exit.
@@ -219,16 +222,15 @@ function findTSConfig(srcpath) {
   return null
 }
 
-function inferSrcdir(cfg) {
+function inferPkgdir(cfg) {
   return cfg.tsconfigFile ? Path.dirname(cfg.tsconfigFile) :
          cfg.srcpathIsFile ? Path.dirname(cfg.srcpathabs) :
          cfg.srcpathabs
-  // return commonParentDir(Array.isArray(srcfiles) ? srcfiles : [srcfiles])
 }
 
 function inferPkgname(cfg) {
   return cfg.srcpathIsFile ? Path.basename(cfg.srcpathabs, Path.extname(cfg.srcpathabs)) :
-         Path.basename(cfg.srcdir)
+         Path.basename(cfg.pkgdir)
 }
 
 function inferOutfile(cfg) {
@@ -245,31 +247,29 @@ function inferOutfile(cfg) {
   return Path.join(outdir, (outdir == '..') ? (cfg.pkgname + '.out') : cfg.pkgname)
 }
 
-function prepareInput(cfg) {
-  if (cfg.tsconfigFile) {
-    cfg.tsconfig = vm.runInNewContext(
-      '1 && ' + fs.readFileSync(cfg.tsconfigFile, {encoding:'utf8'})
-    )
-    // console.log('tsconfig:', cfg.tsconfig)
+function array(v) {
+  return v ? (Array.isArray(v) ? v : [v]) : []
+}
 
-    if (cfg.tsconfig.include) {
-      cfg.srcfiles = cfg.tsconfig.include
-    } else if (cfg.tsconfig.files) {
-      cfg.srcfiles = cfg.tsconfig.files
-    }
+const NotFound = Number.MAX_SAFE_INTEGER
 
-    cfg.srcfilesExclude = cfg.tsconfig.exclude || null
+function strfind(hay, needle) {
+  let p = hay.indexOf(needle)
+  return p == -1 ? NotFound : p
+}
 
-  } else {
-    cfg.srcfiles = [ Path.join(cfg.srcdir, '**/*.js') ]
-  }
-  //cfg.srcfilesabs = cfg.srcfiles.map(name => Path.resolve(cfg.srcdir, name))
-  // const sourceRoot = commonParentDir(Array.isArray(srcfiles) ? srcfiles : [srcfiles])
-  // console.log('sourceRoot:', sourceRoot)
+function parseLooseJSON(s) {
+  return vm.runInNewContext('1 && ' + s)
+}
+
+function loadJSJSONFile(filename) {
+  return filename ?
+    parseLooseJSON(fs.readFileSync(filename, {encoding:'utf8'})) :
+    null
 }
 
 function applyTSOptions(cfg, optionsJSON) {
-  const options = JSON.parse(optionsJSON)
+  const options = parseLooseJSON(optionsJSON)
   if (cfg.tsconfig) {
     if (cfg.tsconfig.compilerOptions) {
       Object.assign(cfg.tsconfig.compilerOptions, options)
@@ -286,12 +286,14 @@ const cfg = {
   optimize: false,
   compress: undefined,
   verbose: 0, // 1 = verbose, 2 = very verbose (-debug option)
-  watch: false,
+  incremental: false,
+  incrementalCache: true, // cache intermediates to speed up incremental builds
   
   srcpath: '.',   // aka pkgdir
   srcpathabs: '',
   srcpathIsFile: false, // true when file, false when dir or pattern
-  srcdir: '',  // = isfile(srcpathabs) ? dirname(srcpathabs) : srcpathabs
+  srcdir: '', // inferred from srcpathabs or tsconfig
+  pkgdir: '',  // = isfile(srcpathabs) ? dirname(srcpathabs) : srcpathabs
   srcfiles: [],
   srcfilesExclude: null, // string or string[] of glob patterns or paths to exlude
   outfile: '',
@@ -303,7 +305,7 @@ const cfg = {
   sourceMapRoot: null,
 
   tsconfigFile: null, // non-null for TS projects
-  tsconfig: null, // loaded by prepareInput
+  tsconfig: null,
 }
 
 function main(argv, progpath) {
@@ -316,7 +318,8 @@ function main(argv, progpath) {
       case 'p': cfg.pkgname = checkArg(k, v, 'string', progpath); break
       case 'O': cfg.optimize = true; break
       case 'g': cfg.debug = true; break
-      case 'w': cfg.watch = true; break
+      case 'i':
+      case 'w': cfg.incremental = true; break
       case 'v': cfg.verbose = 1; break
       case 'd': {
         if (k == 'debug') { cfg.verbose = 2; break }
@@ -327,9 +330,10 @@ function main(argv, progpath) {
       }
       default: {
         switch (k) {
-          case 'compress': cfg.compress = parseBool(v); break
-          case 'no-maps': cfg.sourceMapsEnabled = false; break;
-          case 'sourceMapRoot': cfg.sourceMapRoot = v; break;
+          case 'compress':      cfg.compress = parseBool(v); break
+          case 'no-maps':       cfg.sourceMapsEnabled = false; break;
+          case 'no-incr-cache': cfg.incrementalCache = false; break;
+          case 'map-root':      cfg.sourceMapRoot = v; break;
 
           case 'ts-disable':
           case 'ts-options':
@@ -354,13 +358,45 @@ function main(argv, progpath) {
   cfg.srcpath = args[0] || cfg.srcpath
   cfg.srcpathabs = Path.resolve(cfg.srcpath)
   cfg.srcpathIsFile = cfg.srcpathabs.indexOf('*') != -1 || isfile(cfg.srcpathabs)
-  if (!opts['ts-disable']) {
-    cfg.tsconfigFile = findTSConfig(cfg.srcpathabs)
-  }
-  cfg.srcdir = inferSrcdir(cfg)
-  if (!cfg.pkgname) { cfg.pkgname = inferPkgname(cfg) }
+  cfg.srcdir = cfg.srcpathIsFile ? Path.dirname(cfg.srcpathabs) : cfg.srcpathabs
+  
+  if (!opts['ts-disable'] &&
+      (cfg.tsconfigFile = findTSConfig(cfg.srcpathabs)) &&
+      (cfg.tsconfig = loadJSJSONFile(cfg.tsconfigFile)) )
+  {
+    let srcfiles = [] //, srcfileBasePaths = []
+    if (cfg.tsconfig.include) {
+      const globPatterns = array(cfg.tsconfig.include)
+      srcfiles = srcfiles.concat(globPatterns)
+      // srcfileBasePaths = srcfileBasePaths.concat(globPatterns.map(fn => {
+      //   let p = Math.min(strfind(fn, '*'), strfind(fn, '{'), strfind(fn, '['))
+      //   return (p != NotFound) ? fn.substr(0, p) : fn
+      // }))
+    }
+    if (cfg.tsconfig.files) {
+      const files = array(cfg.tsconfig.files)
+      srcfiles = srcfiles.concat(files)
+      //srcfileBasePaths = srcfileBasePaths.concat(files)
+    }
+    cfg.srcfiles = srcfiles
+    cfg.srcfilesExclude = array(cfg.tsconfig.exclude) || null
+    cfg.pkgdir = Path.dirname(cfg.tsconfigFile)
 
-  prepareInput(cfg)
+    if (cfg.tsconfig.compilerOptions) {
+      const copt = cfg.tsconfig.compilerOptions
+      if (copt.rootDir) {
+        cfg.srcdir = Path.resolve(cfg.pkgdir, copt.rootDir)
+      } else if (copt.rootDirs && Array.isArray(copt.rootDirs) && copt.rootDirs.length) {
+        cfg.srcdir = Path.resolve(cfg.pkgdir, commonParentDir(copt.rootDirs))
+      }
+      // else srcdir = Path.join(cfg.pkgdir, commonParentDir(srcfileBasePaths))
+    }
+  } else {
+    cfg.pkgdir = inferPkgdir(cfg)
+    cfg.srcfiles = [ Path.join(cfg.pkgdir, '**/*.js') ]
+  }
+
+  if (!cfg.pkgname) { cfg.pkgname = inferPkgname(cfg) }
 
   // outdir must be relative to outfile in such a way that
   //   outdir + outfile = cfg.outfileabs
@@ -382,7 +418,7 @@ function main(argv, progpath) {
     // strip ".js" suffix since we add it on depending on .d.ts, or .js/.js.map
     cfg.outfile = cfg.outfile.substr(0, cfg.outfile.length - 3)
   }
-  cfg.outfileabs = Path.resolve(cfg.srcdir, cfg.outfile)
+  cfg.outfileabs = Path.resolve(cfg.pkgdir, cfg.outfile)
   cfg.outfile = Path.basename(cfg.outfile)
   cfg.outdir = Path.dirname(cfg.outfileabs)
 
@@ -406,7 +442,7 @@ function main(argv, progpath) {
   }
 
   // proper working directory required by typescript to resolve types and modules
-  process.chdir(cfg.srcdir)
+  process.chdir(cfg.pkgdir)
 
   const C = gutil.colors
 
@@ -416,7 +452,6 @@ function main(argv, progpath) {
   });
 
   gulp.on('stop', e => { // gulp3 calls this task_stop
-    // if (({default:1, watch:1})[e.name]) { return }
     console.log(`${C.green.bold(e.name)} done ${C.grey('('+fmthrtime(e.duration)+')')}`)
   })
 
@@ -433,7 +468,7 @@ function main(argv, progpath) {
       msg += ' in ' + err.plugin
     }
     msg += ':\n'
-    if (err.showStack) {
+    if (err.showStack && err.stack) {
       msg += err.stack
     } else if (err.fileName) {
       let errmsg = err.message
@@ -442,35 +477,34 @@ function main(argv, progpath) {
       }
 
       msg += C.cyan.bold(
-        err.fileName.substr(0, cfg.srcdir.length) == cfg.srcdir ?
-          Path.relative(cfg.srcdir, err.fileName) : err.fileName
+        err.fileName.substr(0, cfg.pkgdir.length) == cfg.pkgdir ?
+          Path.relative(cfg.pkgdir, err.fileName) : err.fileName
       ) + ': ' + errmsg
     } else {
       msg += err.toString()
     }
     console.error(msg)
     if (cfg.verbose > 1 && e.error.stack) {
-      console.error(e.error.stack)
+      console.error(e.error.stack.substr(e.error.stack.indexOf('\n')+1))
+    }
+    if (!cfg.incremental) {
+      process.exit(1)
     }
   })
 
   // gulp v>=4
   gulp.parallel(['compile'])(function(err) {
     if (err) {
-      if (!cfg.watch) {
+      if (!cfg.incremental) {
         process.exit(1)
       }
-    } else if (cfg.watch) {
-      gulp.watch(cfg.srcfiles, gulp.series('compile'));
-      // gulp.parallel(['watch'])(function(err) {
-      //   if (err) {
-      //     process.exit(1);
-      //   }
-      // });
+    } else if (cfg.incremental) {
+      console.log('watching files for changes')
+      gulp.watch(cfg.srcfiles, compile);
     }
   });
   // gulp v<=3
-  // gulp.start.apply(gulp, [cfg.watch ? 'watch' : 'compile']);
+  // gulp.start.apply(gulp, [cfg.incremental ? 'watch' : 'compile']);
 
   function formatError(e) {
     if (!e.err) { return e.message; }
@@ -495,6 +529,8 @@ function makeTSCompilerOptions(cfg) {
     pretty: true,
     alwaysStrict: true,
     forceConsistentCasingInFileNames: true,
+    moduleResolution: "node",
+    diagnostics: cfg.debug,
     // declaration: true,
     // noImplicitAny: false,
     // experimentalDecorators: true,
@@ -508,8 +544,9 @@ function makeTSCompilerOptions(cfg) {
     lib: [ "es6", "dom" ],
     noEmitOnError: true,
     outDir: cfg.outdir,
-    baseUrl: cfg.srcdir,
-    //rootDirs: [cfg.srcdir],
+    baseUrl: cfg.pkgdir,
+    rootDir: cfg.srcdir,
+    //rootDirs: [cfg.pkgdir],
   }
 
   // Options unsupported by gulp-typescript:
@@ -537,7 +574,7 @@ const BABEL_STAGE_1 = 1  // process individual files
 const BABEL_STAGE_2 = 2  // process final package file
 let babelConfig = new Map; // state => config
 
-function makeBabelConfig(cfg, stage) {
+function getBabelConfig(cfg, stage) {
   let C = babelConfig.get(stage)
   if (C) {
     return C
@@ -550,7 +587,7 @@ function makeBabelConfig(cfg, stage) {
     compact:    cfg.compress,
     minified:   cfg.compress,
     comments:   !cfg.compress,
-    sourceRoot: cfg.srcdir,
+    sourceRoot: cfg.pkgdir,
   }
 
   if (stage == BABEL_STAGE_1 && (cfg.debug || cfg.optimize)) {
@@ -564,6 +601,8 @@ function makeBabelConfig(cfg, stage) {
     )
   }
 
+  const pkgPlugin = [builtin + "pkg", {strict: true, tspkgConfig: cfg}]
+
   if (cfg.optimize) {
     // plugins enabled when asked to optimize output
 
@@ -575,7 +614,7 @@ function makeBabelConfig(cfg, stage) {
     if (stage == BABEL_STAGE_1) {
       C.plugins = C.plugins.concat([
         builtin + "dce",
-        [builtin + "pkg", {strict:true}],
+        pkgPlugin,
       ])
     } else if (stage == BABEL_STAGE_2) {
       C.plugins = C.plugins.concat([
@@ -597,6 +636,8 @@ function makeBabelConfig(cfg, stage) {
         "transform-simplify-comparison-operators",
         "transform-undefined-to-void",
         "minify-mangle-names",
+        builtin + "minify", // eliminates calls to empty functions and does some DCE and CF
+        builtin + "dce",
       ])
     }
 
@@ -604,7 +645,7 @@ function makeBabelConfig(cfg, stage) {
     // plugins enabled when NOT asked to optimize output
     if (stage == BABEL_STAGE_1) {
       C.plugins = C.plugins.concat([
-        [builtin + "pkg", {strict:true}],
+        pkgPlugin,
       ])
     }
   }
@@ -642,9 +683,8 @@ let tsProject = null // lazily-initialized by task "tsc"
 function getTSProject(cfg) {
   if (!tsProject) {
     const ts = require('gulp-typescript');
-    // tsProject = ts.createProject(cfg.tsconfigFile, makeTSCompilerOptions(cfg));
     tsProject = ts.createProject(makeTSCompilerOptions(cfg));
-    tsProject.projectDirectory = cfg.srcdir
+    tsProject.projectDirectory = cfg.pkgdir
     if (cfg.verbose > 1) {
       // console.log('typescript:\n', repr(tsProject))
       console.log('effective typescript configuration:\n', repr(tsProject.options))
@@ -727,78 +767,132 @@ function dtsModulize() {
 }
 
 
-gulp.task('compile', () => {
+function compile() {
+  const useIncrCache = cfg.incremental && cfg.incrementalCache
+
   // Load these as late as possible since they are HUGE and SLOW.
-  // On a maxed-out MacBook Pro 15" i7:
-  //   gulp: 88.716ms
-  //   gulp-babel: 202.939ms
-  //   gulp-sourcemaps: 17.029ms
-  //   gulp-typescript: 45.445ms
-  //   merge2: 0.376ms
-  //
-  // :.(..
-  //
-  const babel      = require('gulp-babel')
+  // On a maxed-out MacBook Pro 15" i7, these few requires takes about 350ms  :.(..
+  const babel      = require('./lib/gulp-babel.js')
   const sourcemaps = require('gulp-sourcemaps')
   const merge      = require('merge2')
   const concat     = require('./lib/gulp-concat.js')
   const gulpPkg    = require('./lib/gulp-pkg.js')
-  const cache      = require('gulp-memory-cache');
+  const gcached    = useIncrCache && require('gulp-cached')
+  const gremember  = useIncrCache && require('gulp-remember')
 
-  const sourceMapRoot = cfg.sourceMapRoot || Path.relative(cfg.outdir, cfg.srcdir)
+  const sourceMapRoot = cfg.sourceMapRoot || Path.relative(cfg.outdir, cfg.pkgdir)
+
+  // TODO
+  //  so when we build wasm-util it's tsconfig has include=["src/**/*.ts"] and so
+  //  cfg.pkgdir does not include "/src", which means that relname of files instead
+  //  includes "src". Whiiich in turn leads to module identifiers including "src".
+  //  babel-plugin-pkg infers module id from source.value when encountering an
+  //  import (e.g. `import "./foo/bar"` is interpreted as module id "foo/bar").
+  //  The module id inferred by babel-plugin-pkg must match those inferred by
+  //  gulp-pkg, or dependency resolution will break.
+  //
+  //  Idea: use glob or whatever to expand input files before passing them to gulp.
+  //  Then use commonParentDir to derive a better cfg.pkgdir which should do it.
+  //
+
+  const sourceFiles = new Map
+  cfg.sourceFiles = sourceFiles
 
   const tsProject = getTSProject(cfg)
-  let tsResult = gulp.src(cfg.srcfiles, {
-    cwd:    cfg.srcdir,
-    // ignore: cfg.srcfilesExclude,
-    // since:  cache.lastMtime('stage1'), // gulp4 feature
+
+  let srcfiles = cfg.srcfiles
+  if (cfg.srcfilesExclude && cfg.srcfilesExclude.length) {
+    // vinyl-fs used by gulp wants excludes at end of source glob patterns.
+    // see https://github.com/gulpjs/vinyl-fs#srcglobs-options
+    for (const pattern of cfg.srcfilesExclude) {
+      srcfiles.push('!' + pattern)
+    }
+  }
+
+  let source = gulp.src(srcfiles, {
+    cwd:    cfg.pkgdir,
+    ignore: cfg.srcfilesExclude,
   }).pipe(through.obj((file, encoding, callback) => {
     // Fix file base
     file.base = cfg.srcdir
     if (cfg.verbose > 1) {
-      console.log('[src]', JSON.stringify(file.relative), 'from', JSON.stringify(cfg.srcdir))
+      console.log('[src]', JSON.stringify(file.base) + ', ' + JSON.stringify(file.relative))
     }
+    // Register source file
+    sourceFiles.set(file.relative, file)
     callback(null, file)
   }))
 
-  tsResult = !cfg.sourceMapsEnabled ? tsResult : tsResult.pipe(sourcemaps.init({
-    identityMap: cfg.debug,
-      // Set to true to generate a full valid source map encoding no changes
-      // (slower, only for Javascript and CSS) instead of the default empty
-      // source map (no mappings, fast). Use this option if you get missing
-      // or incorrect mappings, e.g. when debugging.
-    }
-  ))
-
-  tsResult = tsResult.pipe(tsProject())
-    .on('error', function (error) {
-      if (!cfg.watch) {
-        process.exit(1)
+  if (cfg.sourceMapsEnabled) {
+    source = source.pipe(sourcemaps.init({
+      identityMap: false, //cfg.debug,
+        // Set to true to generate a full valid source map encoding no changes
+        // (slower, only for Javascript and CSS) instead of the default empty
+        // source map (no mappings, fast). Use this option if you get missing
+        // or incorrect mappings, e.g. when debugging.
       }
-    });
+    ))
+  }
 
-  const dtsPipe = tsProject.options.declaration && (tsResult.dts
-    .pipe(dtsModulize())
-    .pipe(concat(cfg.outfile + '.d.ts', {
-      separator: cfg.compress ? '' : '\n'
+  if (useIncrCache) {
+    source = source.pipe(gcached('src'))
+  }
+
+  let tsResult = source.pipe(tsProject())
+    .on('error', function (error) {
+      if (!cfg.incremental) {
+        throw error
+      }
+    })
+
+  let dtsPipe = tsProject.options.declaration && tsResult.dts.pipe(dtsModulize())
+  if (dtsPipe) {
+    if (useIncrCache) {
+      dtsPipe = dtsPipe.pipe(gremember('dts'))
+    }
+    dtsPipe = dtsPipe.pipe(concat(cfg.outfile + '.d.ts', {separator: ''}))
+  }
+
+  let jsPipe = tsResult.js
+    .pipe(through.obj((file, encoding, callback) => {
+      // Fix path of source inf sourcemap. TSC converts the path to be relative from outdir
+      // but we need it to be relative to srcdir for correlation purposes.
+      if (file.sourceMap && file.sourceMap.sources && file.sourceMap.sources.length) {
+        file.sourceMap.sources[0] = Path.relative(
+          cfg.srcdir,
+          Path.join(cfg.outdir, file.sourceMap.sources[0])
+        )
+      }
+      // console.log(`[tspkg] (after ts) ` +
+      //   `file.sourceMap.sources[0]="${file.sourceMap.sources[0]}" ` +
+      //   `file.base="${file.base}" ` +
+      //   `file.relative="${file.relative}" ` +
+      //   `file.path="${file.path}"`
+      // )
+      callback(null, file)
     }))
-  ) // dtsPipe
+    .pipe(babel(cfg, getBabelConfig(cfg, BABEL_STAGE_1)))
 
-  let jsPipe = (tsResult.js
-    .pipe(babel(makeBabelConfig(cfg, BABEL_STAGE_1)))
-    .pipe(cache('stage1'))  // only works with gulp4
+
+  if (useIncrCache) {
+    jsPipe = jsPipe.pipe(gremember('js'))
+  }
+
+  jsPipe = jsPipe
     .pipe(gulpPkg(cfg))
     .on('error', function (error) {
       console.error(error.tspkgCode ?
         (error.styledMessage || error.message) :
         (error.stack || String(error))
       )
-      if (!cfg.watch) {
+      if (!cfg.incremental) {
         process.exit(1)
       }
     })
-    .pipe(babel(makeBabelConfig(cfg, BABEL_STAGE_2)))
-  )
+
+  if (cfg.optimize) {
+    jsPipe = jsPipe.pipe(babel(cfg, getBabelConfig(cfg, BABEL_STAGE_2)))
+  }
 
   if (cfg.sourceMapsEnabled) {
     jsPipe = jsPipe.pipe(sourcemaps.write('.', {
@@ -810,8 +904,10 @@ gulp.task('compile', () => {
       sourceRoot: sourceMapRoot,
 
       // relative source names that are rooted in sourceRoot
-      mapSources: sourcePath =>
-        Path.relative(cfg.srcdir, Path.join(cfg.outdir, sourcePath)),
+      mapSources: sourcePath => {
+        return Path.relative(cfg.pkgdir,
+          Path.isAbsolute(sourcePath) ? sourcePath : Path.join(cfg.outdir, sourcePath))
+      },
 
       // See https://github.com/floridoo/gulp-sourcemaps#write-options for more
     }))
@@ -824,7 +920,9 @@ gulp.task('compile', () => {
   // Note: Gulp uses vinyl-fs which in turn does this concatenation of
   // outdir + relative filename.
   return outPipe.pipe(gulp.dest(cfg.outdir, { cwd: cfg.outdir }))
-})
+}
+
+gulp.task('compile', compile)
 
 // needed by gulp3
 // gulp.task('watch', ['compile'], () => {

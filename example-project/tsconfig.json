@@ -6,13 +6,18 @@
     "sourceMap": true,
     "outDir": "out",
     // "outFile": "out/a.js",
-    //"declaration": true, // not compatible with allowJs
-    "allowJs": true,
-    "types": ["node"]
+    "declaration": true, // not compatible with allowJs
+    // "allowJs": true,
+    "types": ["node"],
+    "rootDir": "src",
+    "rootDirs": ["."]
   },
   "include": [
-    "*.ts",
-    "*.js"
+    "src/**/*.ts",
+    "src/**/*.js"
+  ],
+  "exclude": [
+    "src/ignore*",
   ]
   // "files": [
   //   //"node_modules/@types/node.d.ts",

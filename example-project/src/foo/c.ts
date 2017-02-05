@@ -1,6 +1,6 @@
-import {b} from './b'
-import a from './a'
-import {d} from './d'
+import {b} from '../b-o.b'
+import a from '../a'
+import {d} from './d.js'
 
 const _$lolcat = 1234
 

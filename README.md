@@ -2,11 +2,16 @@
 
 Creates small, fast and easily-distributable packages from TypeScript projects.
 
+- Produces a single JavaScript file along with a source map and optional TypeScript declaration file
 - Conventions over configuration — "just works" with existing TypeScript projects
 - Advanced dead-code elimination
 - Constant folding
 - Import/export elimination
 - Eliding or elimination of package-internal modules
+- Product JS file can be loaded in any JS environment:
+  - CommonJS (Nodejs et al) through `exports` and with `require`
+  - AMD through `define`
+  - Any other environment through `this[<pkg-name>] = <pkg-object>`
 
 Example of constant-folding & DCE working together:
 
@@ -21,7 +26,7 @@ function a(x :any) {
 }
 ```
 
-output.js (from `tspkg -O`; pretty-printed for readability):
+output.js from `tspkg -O`: (simplified for readability)
 
 ```js
 function a(x) {
@@ -29,7 +34,7 @@ function a(x) {
 }
 ```
 
-output.js (from `tspkg -g`; pretty-printed for readability):
+output.js from `tspkg -g`: (simplified for readability)
 
 ```js
 const assert = require('assert')
@@ -79,16 +84,18 @@ options:
                         provided, <pkgname> is inferred from <srcpath>.
   -O                    Produce optimized output. See -help for details.
   -g                    Produce debuggable output. See -help for details.
-  -w[atch]              Watch input files and recompile as they change.
+  -i[ncr], -w[atch]     Incremental compilation (watches source for changes).
   -compress=<bool>      Explicitly enable or disable compression of generated
                         code. Defaults to "true" if -O is provided, otherwise
                         defaults to "false".
-  -ts-disable           Ignore and do not attempt to interpret the project as
-                        a TypeScript project.
-  -ts-options=<json>    Apply <json> to TypeScript "compilerOptions" object.
+  -ts-disable           Do not attempt to interpret the package as a
+                        TypeScript project.
+  -ts-options=<json>    Apply <json> to TypeScript "compilerOptions" object on
+                        top of options from tsconfig file.
   -map-root=<dir>       Source map "sourceRoot" value. Inferred from <srcpath>
                         and <outfile> by default.
   -no-maps              Do not read nor write any source maps.
+  -no-incr-cache        Disable caching for incremental builds.
   -v[erbose]            Print details to stdout.
   -debug                Print lots of details to stdout. Implies -v.
   -dry                  Just print the configuration and exit.

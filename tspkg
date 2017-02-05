@@ -594,26 +594,25 @@ function getBabelConfig(cfg, stage) {
     // prep plugin runs for both debug and optimize
     C.plugins = C.plugins.concat([
       [builtin + "prep", {
-        "consts": (cfg.debug || cfg.optimize) ? new Map([
+        "consts": new Map([
           ["DEBUG", {type:"BooleanLiteral", value: cfg.debug}],
-        ]) : new Map,
+        ]),
       }],
     ])
   }
 
   const pkgPlugin = [builtin + "pkg", {strict: true, tspkgConfig: cfg}]
+  const dcePlugin = [builtin + "dce", {tspkgConfig: cfg}]
+  const minifyPlugin = [builtin + "minify", {tspkgConfig: cfg}]
 
   if (cfg.optimize) {
     // plugins enabled when asked to optimize output
 
-    // all stages
-    C.plugins = C.plugins.concat([
-      "minify-constant-folding",
-    ])
-
     if (stage == BABEL_STAGE_1) {
       C.plugins = C.plugins.concat([
-        builtin + "dce",
+        dcePlugin,
+        minifyPlugin,
+        "minify-constant-folding",
         pkgPlugin,
         "minify-flip-comparisons",
         "minify-guarded-expressions",
@@ -633,7 +632,8 @@ function getBabelConfig(cfg, stage) {
       // the result and the amount of code is significant, so let's stick to
       // only plugins which do something truly valuable.
       C.plugins = C.plugins.concat([
-        builtin + "dce",
+        dcePlugin,
+        "minify-constant-folding",
         "transform-merge-sibling-variables",
         cfg.compress && "minify-mangle-names",
         "minify-simplify",

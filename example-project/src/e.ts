@@ -8,7 +8,7 @@ export function e(v :any) {
   return v * 4
 }
 
-console.log('hello from e' + (require('crypto') && require('./foo/c')))
+console.log('hello' + ' from ' + 'e' + (require('crypto') && require('./foo/c')))
 
 function x() {
   // Not counted as a hard dependency.

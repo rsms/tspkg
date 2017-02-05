@@ -592,13 +592,13 @@ function getBabelConfig(cfg, stage) {
 
   if (stage == BABEL_STAGE_1 && (cfg.debug || cfg.optimize)) {
     // prep plugin runs for both debug and optimize
-    C.plugins.splice(C.plugins.length, 0,
+    C.plugins = C.plugins.concat([
       [builtin + "prep", {
-        "consts": (cfg.debug || cfg.optimize) ? {
-          "DEBUG": {type:"BooleanLiteral", value: cfg.debug},
-        } : {},
-      }]
-    )
+        "consts": (cfg.debug || cfg.optimize) ? new Map([
+          ["DEBUG", {type:"BooleanLiteral", value: cfg.debug}],
+        ]) : new Map,
+      }],
+    ])
   }
 
   const pkgPlugin = [builtin + "pkg", {strict: true, tspkgConfig: cfg}]
@@ -615,29 +615,28 @@ function getBabelConfig(cfg, stage) {
       C.plugins = C.plugins.concat([
         builtin + "dce",
         pkgPlugin,
-      ])
-    } else if (stage == BABEL_STAGE_2) {
-      C.plugins = C.plugins.concat([
-        builtin + "dce",
-        builtin + "minify", // eliminates calls to empty functions and does some DCE and CF
-        builtin + "dce",
         "minify-flip-comparisons",
         "minify-guarded-expressions",
         "minify-infinity",
-        "minify-numeric-literals",
-        "minify-replace",
-        "minify-simplify",
-        "minify-type-constructors",
-        "transform-member-expression-literals",
-        "transform-merge-sibling-variables",
-        // "transform-minify-booleans", // true => !0, false => !1
-        "transform-property-literals",
-        "transform-regexp-constructors",
-        "transform-simplify-comparison-operators",
-        "transform-undefined-to-void",
-        "minify-mangle-names",
-        builtin + "minify", // eliminates calls to empty functions and does some DCE and CF
+        cfg.compress && "minify-numeric-literals",
+        cfg.compress && "transform-simplify-comparison-operators", // x===3 -> x==3 if x is num
+        cfg.compress && "transform-minify-booleans", // true => !0, false => !1
+        cfg.compress && "transform-property-literals", // {"bob":1} -> {bob:1}
+        "minify-type-constructors", // Number(5) -> +5, Array(4) -> [,,,]
+        // "transform-member-expression-literals", // only needed when targeting <ES5
+        // "minify-simplify", // `if (x) { a() }` -> `x && a();`
+        "transform-regexp-constructors", // new RegExp(foo+'c', 'i') -> /ab+c/i
+        // "transform-undefined-to-void", // undefined -> void 0
+      ])
+    } else if (stage == BABEL_STAGE_2) {
+      // stage 2 is run over the concatenated product, meaning we can't cache
+      // the result and the amount of code is significant, so let's stick to
+      // only plugins which do something truly valuable.
+      C.plugins = C.plugins.concat([
         builtin + "dce",
+        "transform-merge-sibling-variables",
+        cfg.compress && "minify-mangle-names",
+        "minify-simplify",
       ])
     }
 
@@ -649,6 +648,9 @@ function getBabelConfig(cfg, stage) {
       ])
     }
   }
+
+  // remove falsy entries
+  C.plugins = C.plugins.filter(p => p)
 
   if (cfg.verbose > 1) {
     // we print before converting plugin paths
@@ -747,7 +749,7 @@ function dtsModulize() {
     const moduleName = filename.substr(0, file.relative.length-5)
 
     const indent = '  '
-    const header = 'declare module ' + JSON.stringify(moduleName) + ' {\n' + indent
+    const header = "declare module '" + moduleName.replace(/'/g, "\\'") + "' {\n" + indent
     const trailer = '}\n'
     let body = file.contents.toString(encoding).trim()
 
@@ -756,7 +758,10 @@ function dtsModulize() {
       (body
         .replace(/declare /g, '') //<- FIXME proper parser
         .replace(/(\r?\n)(\s{4})/mg, '$1' + indent)
-        .replace(/(\r?\n)/gm, '$1' + indent))
+        .replace(/(\r?\n)/gm, '$1' + indent)
+        .replace(/import\s+(.+\s+|)'\.\//g, "import $1'")
+          // ^ FIXME something that's not horrible
+      )
       + '\n' + trailer
     }
 

@@ -242,10 +242,6 @@ babel-plugin-minify-numeric-literals@^0.0.1:
   version "0.0.1"
   resolved "https://registry.yarnpkg.com/babel-plugin-minify-numeric-literals/-/babel-plugin-minify-numeric-literals-0.0.1.tgz#9597e6c31154d7daf3744d0bd417c144b275bd53"
 
-babel-plugin-minify-replace@^0.0.2:
-  version "0.0.2"
-  resolved "https://registry.yarnpkg.com/babel-plugin-minify-replace/-/babel-plugin-minify-replace-0.0.2.tgz#353d6a4aaee5eba3897d3ecd9e6ccb8fbecbaa15"
-
 babel-plugin-minify-simplify@^0.0.6:
   version "0.0.6"
   resolved "https://registry.yarnpkg.com/babel-plugin-minify-simplify/-/babel-plugin-minify-simplify-0.0.6.tgz#1d50899b29c3c4503eaefb98365cc5f7a84aedfe"
@@ -259,10 +255,6 @@ babel-plugin-minify-type-constructors@^0.0.3:
   resolved "https://registry.yarnpkg.com/babel-plugin-minify-type-constructors/-/babel-plugin-minify-type-constructors-0.0.3.tgz#ab59c1ad835b6b6e8e932b875d4df4dc393d9d26"
   dependencies:
     babel-helper-is-void-0 "^0.0.1"
-
-babel-plugin-transform-member-expression-literals@^6.8.1:
-  version "6.8.1"
-  resolved "https://registry.yarnpkg.com/babel-plugin-transform-member-expression-literals/-/babel-plugin-transform-member-expression-literals-6.8.1.tgz#60b78cb2b814ac71dd6104ef51c496c62e877337"
 
 babel-plugin-transform-merge-sibling-variables@^6.8.1:
   version "6.8.1"

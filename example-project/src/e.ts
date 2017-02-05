@@ -8,10 +8,12 @@ export function e(v :any) {
   return v * 4
 }
 
-console.log('hello from e' && require('crypto') && require('./foo/c'))
+console.log('hello from e' + (require('crypto') && require('./foo/c')))
 
-const cr = require('crypto')
 function x() {
+  // Not counted as a hard dependency.
+  // Place at root scope or use `import` to have tspkg manage the dependency.
+  const cr = require('crypto')
   return cr
 }
 

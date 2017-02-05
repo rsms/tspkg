@@ -1,9 +1,9 @@
 import {equal} from 'assert'
 
-const DEBUG = 0
-const assert = DEBUG ? equal : function(a:any,b:any){}
+const DEBUG = false
+const asserteq = DEBUG ? equal : function(a:any,b:any){}
 function a(x) {
-  assert(x > 0,1)
+  asserteq(x > 0, 1)
   return 1 / x
 }
 

@@ -12,6 +12,8 @@ Creates small, fast and easily-distributable packages from TypeScript projects.
   - CommonJS (Nodejs et al) through `exports` and with `require`
   - AMD through `define`
   - Any other environment through `this[<pkg-name>] = <pkg-object>`
+- Incremental compilation (similar to `tsc --watch`)
+- [Circular dependency detection](#acyclic-dependency-graph)
 
 Example of constant-folding & DCE working together:
 

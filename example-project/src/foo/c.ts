@@ -6,5 +6,6 @@ const _$lolcat = 1234
 
 console.log('c:', d(b(456) + a(789)), _$lolcat * 4)
                                    // ~~~~~~~~~~~~ should fold to `4936`
+export interface C { c: number }
 
 module.exports = _$lolcat

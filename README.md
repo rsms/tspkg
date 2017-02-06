@@ -85,6 +85,19 @@ const parser = parser_compat
 
 Note: In reality, dead-code elimination will remove the `VERSION` const above, along with `const parser` unless we export it or use it in something that's exported.
 
+The expression provided as the value for `-D` can be any JavaScript:
+
+```js
+export const FOO = null
+```
+
+We run `tspkg '-DFOO=function(){ return [1, 2, 3] }'` which produces results equivalent to:
+
+```js
+export const FOO = function() {
+  return [1, 2, 3]
+}
+```
 
 ## Acyclic dependency graph
 

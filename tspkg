@@ -129,6 +129,8 @@ options:
   -compress=<bool>      Explicitly enable or disable compression of generated
                         code. Defaults to "true" if -O is provided, otherwise
                         defaults to "false".
+  -keep-names           Prevent function and class names from being compressed
+                        or removed. Only has an effect when compressing.
   -ts-disable           Do not attempt to interpret the package as a
                         TypeScript project.
   -ts-options=<json>    Apply <json> to TypeScript "compilerOptions" object on
@@ -285,6 +287,7 @@ const cfg = {
   debug: false,
   optimize: false,
   compress: undefined,
+  compressNames: undefined,
   verbose: 0, // 1 = verbose, 2 = very verbose (-debug option)
   incremental: false,
   incrementalCache: true, // cache intermediates to speed up incremental builds
@@ -333,6 +336,7 @@ function main(argv, progpath) {
           case 'compress':      cfg.compress = parseBool(v); break
           case 'no-maps':       cfg.sourceMapsEnabled = false; break;
           case 'no-incr-cache': cfg.incrementalCache = false; break;
+          case 'keep-names':    cfg.compressNames = false; break;
           case 'map-root':      cfg.sourceMapRoot = v; break;
 
           case 'ts-disable':
@@ -352,6 +356,10 @@ function main(argv, progpath) {
   if (cfg.compress === undefined) {
     // unless specified, enable compression when optimization is requested
     cfg.compress = cfg.optimize
+  }
+
+  if (cfg.compressNames === undefined) {
+    cfg.compressNames = cfg.compress
   }
 
   // Parse options. Order matters.
@@ -623,7 +631,6 @@ function getBabelConfig(cfg, stage) {
         cfg.compress && "transform-property-literals", // {"bob":1} -> {bob:1}
         "minify-type-constructors", // Number(5) -> +5, Array(4) -> [,,,]
         // "transform-member-expression-literals", // only needed when targeting <ES5
-        // "minify-simplify", // `if (x) { a() }` -> `x && a();`
         "transform-regexp-constructors", // new RegExp(foo+'c', 'i') -> /ab+c/i
         // "transform-undefined-to-void", // undefined -> void 0
       ])
@@ -635,7 +642,10 @@ function getBabelConfig(cfg, stage) {
         dcePlugin,
         "minify-constant-folding",
         "transform-merge-sibling-variables",
-        cfg.compress && "minify-mangle-names",
+        cfg.compress && ["minify-mangle-names", {
+          keepFnName:    !cfg.compressNames,
+          keepClassName: !cfg.compressNames,
+        }],
         "minify-simplify", // `if (x) { a() }` -> `x && a();`
       ])
     }

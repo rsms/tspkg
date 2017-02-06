@@ -4,8 +4,7 @@ Creates small, fast and easily-distributable packages from TypeScript projects.
 
 - Produces a single JavaScript file along with a source map and optional TypeScript declaration file
 - Conventions over configuration — "just works" with existing TypeScript projects
-- Advanced dead-code elimination
-- Constant folding
+- [Advanced dead-code elimination and constant folding](#constant-substitution-cf-and-dce)
 - Import/export elimination
 - Eliding or elimination of package-internal modules
 - Product JS file can be loaded in any JS environment:
@@ -16,7 +15,7 @@ Creates small, fast and easily-distributable packages from TypeScript projects.
 - [Circular dependency detection](#acyclic-dependency-graph)
 
 
-## Constant folding and DCE
+## Constant substitution, CF and DCE
 
 input.ts:
 

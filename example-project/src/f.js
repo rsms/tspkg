@@ -1,11 +1,10 @@
-// This would create a dependency cycle:
-// import {b} from './b'
-// export function f(v) { return b(v * 6) }
+import {createContext} from 'vm'
 export function f(v) { return v * 6 }
 
-const fs = require('fs') // ignored (left untouched) by tspkg (by design)
+const fs = require('fs') // left untouched (by design)
+require('crypto') // left untouched (by design)
 
 function lol(v) {
   // not used and not exported, so should be completely eliminated
-  return v * 4
+  return fs(createContext({v: v * 4}))
 }

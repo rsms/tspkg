@@ -16,6 +16,16 @@ export function a2(x) {
   return 1.2 / x
 }
 
+export class Animal {
+  furry :boolean
+  constructor(furry :boolean) {
+    this.furry = furry
+  }
+  isFurry() : boolean {
+    return this.furry
+  }
+}
+
 export default a
 
 // console.log('a: init')

@@ -636,7 +636,7 @@ function getBabelConfig(cfg, stage) {
         "minify-constant-folding",
         "transform-merge-sibling-variables",
         cfg.compress && "minify-mangle-names",
-        "minify-simplify",
+        "minify-simplify", // `if (x) { a() }` -> `x && a();`
       ])
     }
 

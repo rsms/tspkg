@@ -14,6 +14,7 @@ Creates small, fast and easily-distributable packages from TypeScript projects.
 - Incremental compilation (similar to `tsc --watch`)
 - [Circular dependency detection](#acyclic-dependency-graph)
 
+[Have a look at the output from tspkg -O](https://gist.github.com/rsms/ffc0f7b8ef9eb814fe1bceab6127c24b) run on the [example project](example-project)
 
 ## Constant substitution, CF and DCE
 

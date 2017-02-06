@@ -15,12 +15,13 @@ Creates small, fast and easily-distributable packages from TypeScript projects.
 - Incremental compilation (similar to `tsc --watch`)
 - [Circular dependency detection](#acyclic-dependency-graph)
 
-Example of constant-folding & DCE working together:
+
+## Constant folding and DCE
 
 input.ts:
 
 ```ts
-const DEBUG = 0
+const DEBUG = false
 const assert = DEBUG ? equal : require('assert')
 function a(x :any) {
   assert(x > 0,1)

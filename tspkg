@@ -126,6 +126,8 @@ options:
   -O                    Produce optimized output. See -help for details.
   -g                    Produce debuggable output. See -help for details.
   -i[ncr], -w[atch]     Incremental compilation (watches source for changes).
+  -D<name>[=<expr>]     ReDefine constant <name> with value <expr>. If no
+                        <expr> is provided, "true" is assumed.
   -compress=<bool>      Explicitly enable or disable compression of generated
                         code. Defaults to "true" if -O is provided, otherwise
                         defaults to "false".
@@ -154,6 +156,11 @@ options:
     a/b.js       Code
     a/b.js.map   Source map
     a/b.d.ts     Type declarations
+
+-D
+  When -g is provided, the equivalent of -DDEBUG=true is configured by default.
+  In this scenario, you can override the replacement by explicitly providing
+  -DDEBUG=<expr> with some expression.
 
 -g
   When provided:
@@ -291,6 +298,7 @@ const cfg = {
   verbose: 0, // 1 = verbose, 2 = very verbose (-debug option)
   incremental: false,
   incrementalCache: true, // cache intermediates to speed up incremental builds
+  constSubstitutions: [],
   
   srcpath: '.',   // aka pkgdir
   srcpathabs: '',
@@ -330,6 +338,16 @@ function main(argv, progpath) {
       }
       case 't': {
         if (k == 'ts-disable' || k == 'ts-options') { break }
+      }
+      case 'D': {
+        if (k.length == 1) {
+          console.error(`Missing value for -${k}.`)
+          usage(progpath)
+        }
+        const kk = k.substr(1).trim()
+        const vv = (typeof v == 'string' ? v.trim() : false) || 'true'
+        cfg.constSubstitutions.push([kk, vv])
+        break
       }
       default: {
         switch (k) {
@@ -598,13 +616,22 @@ function getBabelConfig(cfg, stage) {
     sourceRoot: cfg.pkgdir,
   }
 
+  let substitutions = new Map
+
   if (stage == BABEL_STAGE_1 && (cfg.debug || cfg.optimize)) {
     // prep plugin runs for both debug and optimize
+    substitutions.set("DEBUG", cfg.debug ? 'true' : 'false')
+  }
+
+  // apply any custom substitutions after the default ones to allow overwriting.
+  for (const s of cfg.constSubstitutions) {
+    substitutions.set(s[0], s[1])
+  }
+
+  if (substitutions.size) {
     C.plugins = C.plugins.concat([
       [builtin + "prep", {
-        "consts": new Map([
-          ["DEBUG", {type:"BooleanLiteral", value: cfg.debug}],
-        ]),
+        subs: substitutions
       }],
     ])
   }

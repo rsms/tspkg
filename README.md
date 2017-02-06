@@ -47,6 +47,46 @@ function a(x) {
 }
 ```
 
+You can provide replacement expressions for module-level constants. Say we have this:
+
+```js
+const VERSION = 0
+```
+
+Running `tspkg -DVERSION=5`, the output will look like this:
+
+```js
+const VERSION = 5
+```
+
+This can be used to control what code is included when the -O flag is provided:
+
+```js
+import {parser as parser_4} from './parser-v4'
+import {parser as parser_compat} from './parser'
+const VERSION = 0
+const parser = VERSION > 3 ? parser_4 : parser_compat
+```
+
+Running `tspkg -O -DVERSION=5`, the output will look like this:
+
+```js
+import {parser as parser_4} from './parser-v4'
+const VERSION = 5
+const parser = parser_4
+```
+
+If we instead run `tspkg -O -DVERSION=2`, the output will look like this:
+
+```js
+import {parser as parser_compat} from './parser'
+const VERSION = 2
+const parser = parser_compat
+```
+
+Note: In reality, dead-code elimination will remove the `VERSION` const above, along with `const parser` unless we export it or use it in something that's exported.
+
+
 ## Acyclic dependency graph
 
 tspkg enforces [dependency graphs](https://en.wikipedia.org/wiki/Dependency_graph) to be [acyclic](https://en.wikipedia.org/wiki/Directed_acyclic_graph).

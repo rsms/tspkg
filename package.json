@@ -17,7 +17,8 @@
     "lib/gulp-pkg.js",
     "lib/mark-eval-scope.js",
     "lib/toposort.js",
-    "lib/util.js"
+    "lib/util.js",
+    "yarn.lock"
   ],
   "keywords": [
     "compression",

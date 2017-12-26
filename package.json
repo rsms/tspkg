@@ -57,8 +57,8 @@
     "gulp-sourcemaps": "^2.4.0",
     "gulp-typescript": "^3.1.4",
     "gulp-util": "^3.0.8",
-    "gulp4": "^4.0.1",
+    "gulp4": "^4.0.2",
     "merge2": "^1.0.3",
-    "typescript": "^2.1.5"
+    "typescript": "^2.6.2"
   }
 }

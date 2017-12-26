@@ -1020,9 +1020,9 @@ gulp-util@^3.0.0, gulp-util@^3.0.1, gulp-util@^3.0.8, gulp-util@~3.0.7:
     through2 "^2.0.0"
     vinyl "^0.5.0"
 
-gulp4@^4.0.1:
-  version "4.0.1"
-  resolved "https://registry.yarnpkg.com/gulp4/-/gulp4-4.0.1.tgz#547e00efc67bce429ea8139df18365399df9894c"
+gulp4@^4.0.2:
+  version "4.0.2"
+  resolved "https://registry.yarnpkg.com/gulp4/-/gulp4-4.0.2.tgz#0c30ca373e7775c21ecec2585917e9940a2ba283"
   dependencies:
     glob-watcher "^3.0.0"
     gulp-cli4 "^0.1.0"
@@ -2187,9 +2187,9 @@ tweetnacl@^0.14.3, tweetnacl@~0.14.0:
   version "0.14.5"
   resolved "https://registry.yarnpkg.com/tweetnacl/-/tweetnacl-0.14.5.tgz#5ae68177f192d4456269d108afa93ff8743f4f64"
 
-typescript@^2.1.5:
-  version "2.2.0"
-  resolved "https://registry.yarnpkg.com/typescript/-/typescript-2.2.0.tgz#626f2fc70087d2480f21ebb12c1888288c8614e3"
+typescript@^2.6.2:
+  version "2.6.2"
+  resolved "https://registry.yarnpkg.com/typescript/-/typescript-2.6.2.tgz#3c5b6fd7f6de0914269027f03c0946758f7673a4"
 
 uid-number@~0.0.6:
   version "0.0.6"

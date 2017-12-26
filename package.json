@@ -1,6 +1,6 @@
 {
   "name": "tspkg",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Create small, fast and easily-distributable packages from TypeScript projects",
   "bin": {
     "tspkg": "./tspkg"

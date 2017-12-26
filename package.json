@@ -31,6 +31,9 @@
   "bugs": {
     "url": "https://github.com/rsms/tspkg/issues"
   },
+  "scripts": {
+    "test": "[ ! -d example-project ] || ./tspkg -o=example-project/out/example-project.js -v example-project"
+  },
   "homepage": "https://github.com/rsms/tspkg#readme",
   "author": "Rasmus Andersson <rsms.me>",
   "license": "MIT",
@@ -44,21 +47,21 @@
     "babel-plugin-minify-numeric-literals": "^0.0.1",
     "babel-plugin-minify-simplify": "^0.0.6",
     "babel-plugin-minify-type-constructors": "^0.0.3",
-    "babel-plugin-transform-merge-sibling-variables": "^6.8.1",
-    "babel-plugin-transform-minify-booleans": "^6.8.0",
-    "babel-plugin-transform-property-literals": "^6.8.1",
+    "babel-plugin-transform-merge-sibling-variables": "^6.8.6",
+    "babel-plugin-transform-minify-booleans": "^6.8.3",
+    "babel-plugin-transform-property-literals": "^6.8.5",
     "babel-plugin-transform-regexp-constructors": "^0.0.5",
-    "babel-plugin-transform-simplify-comparison-operators": "^6.8.1",
-    "babel-plugin-transform-undefined-to-void": "^6.8.0",
+    "babel-plugin-transform-simplify-comparison-operators": "^6.8.5",
+    "babel-plugin-transform-undefined-to-void": "^6.8.3",
     "concat-with-sourcemaps": "^1.0.4",
+    "gulp4": "^4.0.2",
     "gulp-babel": "^6.1.2",
     "gulp-cached": "^1.1.1",
     "gulp-remember": "^0.3.1",
-    "gulp-sourcemaps": "^2.4.0",
-    "gulp-typescript": "^3.1.4",
+    "gulp-sourcemaps": "^2.6.2",
+    "gulp-typescript": "^3.2.3",
     "gulp-util": "^3.0.8",
-    "gulp4": "^4.0.2",
-    "merge2": "^1.0.3",
+    "merge2": "^1.2.0",
     "typescript": "^2.6.2"
   }
 }

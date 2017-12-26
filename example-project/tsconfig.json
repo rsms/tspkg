@@ -1,13 +1,15 @@
 {
   "compilerOptions": {
-    "module": "es2015", "moduleResolution": "node",
-    "target": "es6",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2015",
     "noImplicitAny": false,
     "sourceMap": true,
     "outDir": "out",
     // "outFile": "out/a.js",
     //"declaration": true, // not compatible with allowJs
     "allowJs": true,
+    "lib": [ "dom", "esnext" ],
     "types": ["node"],
     "rootDir": "src",
     "rootDirs": ["."]

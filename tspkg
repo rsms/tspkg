@@ -557,6 +557,7 @@ function makeTSCompilerOptions(cfg) {
     forceConsistentCasingInFileNames: true,
     moduleResolution: "node",
     diagnostics: cfg.debug,
+    lib: [ "esnext" ],
     // declaration: true,
     // noImplicitAny: false,
     // experimentalDecorators: true,
@@ -566,8 +567,7 @@ function makeTSCompilerOptions(cfg) {
   // options which replace those of tsconfig
   let options = {
     module: "es2015", // 'commonjs', 'amd', 'system', 'umd' or 'es2015'
-    target: "ESNEXT", // results to through babel
-    lib: [ "es6", "dom" ],
+    target: "esnext", // results go through babel
     noEmitOnError: true,
     outDir: cfg.outdir,
     baseUrl: cfg.pkgdir,
